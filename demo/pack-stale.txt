@@ -1,0 +1,2 @@
+Lading demo artifact for the stale scenario, version 1
+Verified once, then nobody confirms it again.

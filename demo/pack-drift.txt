@@ -1,0 +1,2 @@
+Lading demo artifact for the drift scenario, version 1
+The provider ships this file and later quietly replaces it.
