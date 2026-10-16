@@ -1,0 +1,2 @@
+Lading demo artifact for the UI stale-split run
+This file is verified and then left alone.
