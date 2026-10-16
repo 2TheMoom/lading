@@ -106,10 +106,10 @@ export default function Delivery() {
   const matches = att?.status === "verified" && computed !== "" && computed === listed;
   const stamp = verifierSays === "verified" ? { text: "Match", cls: "green" } : verifierSays === "pending" ? { text: "Not checked yet", cls: "yellow" } : { text: verifierSays, cls: "red" };
 
-  const row = (action: EngagementAction, label: string, run: () => void, busy: boolean, opts?: { danger?: boolean; note?: string }) =>
+  const row = (action: EngagementAction, label: string, run: () => void, busy: boolean, opts?: { danger?: boolean; note?: string; blocked?: boolean }) =>
     actions.includes(action) && (
       <div key={action} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        <button className={`l-btn small${opts?.danger ? " danger" : ""}`} type="button" disabled={busy} onClick={run}>{busy ? "Working…" : label}</button>
+        <button className={`l-btn small${opts?.danger ? " danger" : ""}`} type="button" disabled={busy || !!opts?.blocked} onClick={run}>{busy ? "Working…" : label}</button>
         {opts?.note && <span className="l-note">{opts.note}</span>}
       </div>
     );
@@ -226,8 +226,8 @@ export default function Delivery() {
                   </div>
                 )}
                 {row("verify", "Verify now", () => verify.run({ id }), verify.isPending, { note: "Needs the verifier's verdict to have finalized." })}
-                {row("release", "Record the release", () => release.run({ id }), release.isPending || !!blocker, { note: blocker ?? "Records the outcome. Settle pays it." })}
-                {row("refund_drift", "Record a refund, a file changed", () => refund.run({ id }), refund.isPending || drift.length === 0, { danger: true, note: drift.length === 0 ? "Unlocks when a link no longer checks out." : undefined })}
+                {row("release", "Record the release", () => release.run({ id }), release.isPending, { blocked: !!blocker, note: blocker ?? "Records the outcome. Settle pays it." })}
+                {row("refund_drift", "Record a refund, a file changed", () => refund.run({ id }), refund.isPending, { danger: true, blocked: drift.length === 0, note: drift.length === 0 ? "Unlocks when a link no longer checks out." : undefined })}
                 {row("settle", e.outcome === "provider" ? "Settle: pay the provider" : "Settle: refund the client", () => settle.run({ id }), settle.isPending, { note: "Pays once. The money moves when this finalizes." })}
                 {row("reclaim_timeout", e.status === "proposed" ? "Cancel and reclaim" : "Reclaim the escrow", () => reclaimT.run({ id }), reclaimT.isPending, { danger: true })}
                 {row("reclaim_stale", staleKind(e, now) === "verified" ? "Recover: split evenly" : "Recover the stuck submission", () => reclaimS.run({ id }), reclaimS.isPending, { danger: true, note: staleKind(e, now) === "verified" ? "Nobody could confirm it after the window. It splits evenly." : "The release was never verified. This refunds the client." })}
