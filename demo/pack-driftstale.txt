@@ -1,0 +1,2 @@
+Lading demo artifact for the drift-then-stale scenario
+This is the file that was verified.
