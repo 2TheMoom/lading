@@ -1,0 +1,71 @@
+{
+ "rows": [
+  {
+   "who": "gl-test-4 (client)",
+   "step": "Fund lad-ui-1 (create_engagement, 0.002 GEN, source + build, agreed digest empty, pin on the jq release path)",
+   "result": "accepted",
+   "hash": "0xdbdaea497c6984b08770d4b0db13b424fbc4bc3617f3ca3b563fcff50c6fc5ed"
+  },
+  {
+   "who": "gl-test-5 (provider)",
+   "step": "Accept the exact terms (accept)",
+   "result": "accepted",
+   "hash": "0x7b3ee4a138e412034215eea572634c0eeb2a3d3ec18a675da8eb2442e743acb8"
+  },
+  {
+   "who": "gl-test-5 (provider)",
+   "step": "Mark as shipped (submit)",
+   "result": "accepted",
+   "hash": "0xf5ef028abe264c68f8748ee519c84fa2160d51efdf636615747f796f3330d64b"
+  },
+  {
+   "who": "gl-test-5 (provider)",
+   "step": "Verify now (verify): 2 links vouched for in finalized state",
+   "result": "accepted",
+   "hash": "0xf96f553c74f32457f9ce4670f7b324c8b43ab7e1da3ee76e93ef81842d51411d"
+  },
+  {
+   "who": "gl-test-4 (client)",
+   "step": "Fund lad-ui-2 (create_engagement)",
+   "result": "accepted",
+   "hash": "0x20c74f5d01bb2ef8c513fa9558004774dc0c4c4c67ea75e905349f20de6b768b"
+  },
+  {
+   "who": "gl-test-4 (client)",
+   "step": "Cancel and reclaim lad-ui-2 (reclaim_timeout)",
+   "result": "accepted, refunded after finality",
+   "hash": "0x4b6cc588d21c20aa3cf29f04b6dc9fbf086e4fa8236d0241d6917eda8588728e"
+  },
+  {
+   "who": "gl-test-4 (client)",
+   "step": "Ask validators to check the source (verifier.check), after the window closed",
+   "result": "accepted",
+   "hash": "0x5b0efabd36da317c615c7a084aafe069b07c1f3846d66a6420f43e3b8b5f620c"
+  },
+  {
+   "who": "gl-test-4 (client)",
+   "step": "Ask validators to check the build (verifier.check), after the window closed",
+   "result": "accepted",
+   "hash": "0x2cbdb9c0c3dc4c602a006ad504830e1a9a530445c98414bba729451c8879b3a1"
+  },
+  {
+   "who": "gl-test-4 (client)",
+   "step": "Record the release (release) BEFORE the checks finalized",
+   "result": "refused by the contract; the app reported \"Release did not go through\"",
+   "hash": "0x4969ef09bafec7549fe3b56649926410a8bcc784169b9385475dd996426c9974"
+  },
+  {
+   "who": "gl-test-4 (client)",
+   "step": "Record the release (release) after they finalized",
+   "result": "accepted",
+   "hash": "0x8ba62f08cac926930b30e394bee6960d9746a44920157f0e886e0c8d3dcaeee3"
+  },
+  {
+   "who": "gl-test-4 (client)",
+   "step": "Settle: pay the provider (settle)",
+   "result": "accepted, paid after finality",
+   "hash": "0xee4ff37fef13690c0b17c70d02fff2c9404544129675270cb1c3506b97e0bd65"
+  }
+ ],
+ "providerDeltaWei": "2000000000000000"
+}

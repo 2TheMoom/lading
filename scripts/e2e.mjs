@@ -364,9 +364,10 @@ async function cancel() {
   const list = `${JQ}/sha256sum.txt`;
   // 1. a refused payable call: the pin is not a prefix of the list. Measure where its 1 wei goes.
   const bad = [`lad-${RUN}-bad`, addr["gl-test-2"], art, list, "jq-linux-amd64", "", "https://example.org/other/", "", now() + 4 * 3600, WINDOW, STALE];
-  const before = await read(LADING, "get_engagement_count");
   await expectRefused(scn, "gl-test-1", "create_engagement", bad, 1n);
-  if ((await read(LADING, "get_engagement_count")) !== before) throw new Error(`${scn}: a refused creation was stored`);
+  // check this exact id (a count would race with the other scenarios creating engagements at the same time)
+  const stored = await reader.readContract({ address: LADING, functionName: "get_engagement", args: [bad[0]] }).then(() => true).catch(() => false);
+  if (stored) throw new Error(`${scn}: a refused creation was stored`);
   // 2. an unaccepted proposal is cancelled by its client, and only by its client
   const id = `lad-${RUN}-cancel`;
   await create(scn, id, { artifact: art, list, name: "jq-linux-amd64", parent: "", pin: JQ_PIN });

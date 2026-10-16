@@ -1,0 +1,102 @@
+{
+ "escrow": "0xacc591981a7F4B059aE9E5C9a4Cd79aC7fe56A45",
+ "verifier": "0x6508856DE231e094BfD121Eb5A30D5C3c03972A9",
+ "run": "mvaew35p",
+ "started": "2026-10-16T03:32:16.068Z",
+ "events": [
+  {
+   "t": "2026-10-16T03:32:31.375Z",
+   "scenario": "cancel",
+   "msg": "create_engagement 0x04092a11c6 exec=FINISHED_WITH_ERROR: refused, as it must be (its 1 wei stays in the contract)",
+   "fn": "create_engagement",
+   "hash": "0x04092a11c606b348b8c25ad51b8dfb147a59d28285e9d803cb49d1ee737e7da4",
+   "exec": "FINISHED_WITH_ERROR",
+   "refused": true,
+   "strandedWei": "1"
+  },
+  {
+   "t": "2026-10-16T03:32:53.094Z",
+   "scenario": "cancel",
+   "msg": "escrow.create_engagement 0xcedb82cf7d exec=FINISHED_WITH_RETURN",
+   "fn": "create_engagement",
+   "contract": "escrow",
+   "hash": "0xcedb82cf7d09430989d43d36b9d373cb1309bdc7a8e714f738ebbe37be902985",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-16T03:32:54.366Z",
+   "scenario": "cancel",
+   "msg": "terms hash on chain cabf89f6f24f4620..., attestation a51345936884f054...",
+   "termsHash": "cabf89f6f24f46202926269e33a7b26a29122204e93a40e097216cc06b63db7d"
+  },
+  {
+   "t": "2026-10-16T03:33:08.215Z",
+   "scenario": "cancel",
+   "msg": "reclaim_timeout 0xe809022dc4 exec=FINISHED_WITH_ERROR: refused, as it must be",
+   "fn": "reclaim_timeout",
+   "hash": "0xe809022dc48d28e0604c8a561f0950dc05fd8c6091923c8bc27f0d47cef81786",
+   "exec": "FINISHED_WITH_ERROR",
+   "refused": true,
+   "strandedWei": "0"
+  },
+  {
+   "t": "2026-10-16T03:33:27.994Z",
+   "scenario": "cancel",
+   "msg": "reclaim_timeout 0x283bcec21a exec=FINISHED_WITH_ERROR: refused, as it must be",
+   "fn": "reclaim_timeout",
+   "hash": "0x283bcec21a5d684da950a5fe44abe927c76db1f52c7ae50cee0f62fb0baf6111",
+   "exec": "FINISHED_WITH_ERROR",
+   "refused": true,
+   "strandedWei": "0"
+  },
+  {
+   "t": "2026-10-16T03:33:42.276Z",
+   "scenario": "cancel",
+   "msg": "escrow.reclaim_timeout 0x507133afdc exec=FINISHED_WITH_RETURN",
+   "fn": "reclaim_timeout",
+   "contract": "escrow",
+   "hash": "0x507133afdceae67f395696d6b356296f4966c4ad470a7e739dbfd9c897af0ae2",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-16T03:33:56.829Z",
+   "scenario": "cancel",
+   "msg": "reclaim_timeout 0x256915c2f2 exec=FINISHED_WITH_ERROR: refused, as it must be",
+   "fn": "reclaim_timeout",
+   "hash": "0x256915c2f24d274fa5df7a66ecc84594420a209085e77c769fd2cc5c617ea64a",
+   "exec": "FINISHED_WITH_ERROR",
+   "refused": true,
+   "strandedWei": "0"
+  },
+  {
+   "t": "2026-10-16T04:03:42.588Z",
+   "scenario": "cancel",
+   "msg": "reclaim_timeout FINALIZED 29.8 min after the wait began",
+   "label": "reclaim_timeout",
+   "finalizedAfterMinutes": 29.8
+  },
+  {
+   "t": "2026-10-16T04:03:43.960Z",
+   "scenario": "account",
+   "msg": "MISMATCH (stranded 2): {\"balance\":2000000000000002,\"in_flight\":2000000000000002,\"shortfall\":0,\"total_received\":\"14000000000000000\",\"total_scheduled\":\"14000000000000000\",\"unscheduled\":0}"
+  }
+ ],
+ "results": {
+  "cancel": {
+   "status": "settled",
+   "outcome": "client",
+   "reason": "timeout"
+  }
+ },
+ "accounting": {
+  "balance": 2000000000000002,
+  "in_flight": 2000000000000002,
+  "shortfall": 0,
+  "total_received": "14000000000000000",
+  "total_scheduled": "14000000000000000",
+  "unscheduled": 0
+ },
+ "strandedWei": "2",
+ "accountingOk": false,
+ "finished": "2026-10-16T04:03:43.961Z"
+}
