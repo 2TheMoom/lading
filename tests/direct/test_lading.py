@@ -215,6 +215,8 @@ BAD_CREATES = {
     "list outside the pin": dict(pin="https://other.example.com/releases/"),
     "past deadline": dict(deadline=T0_TS - 1),
     "deadline now": dict(deadline=T0_TS),
+    "deadline beyond two years": dict(deadline=T0_TS + 730 * 86400 + 1),
+    "deadline past the u256 range": dict(deadline=2**256),
     "window too short": dict(window=WINDOW - 1),
     "window too long": dict(window=7 * 86400 + 1),
     "stale too short": dict(stale=7199),
@@ -231,6 +233,16 @@ def test_every_invalid_creation_is_refused_and_stores_nothing(direct_vm, direct_
     with direct_vm.expect_revert():
         _create(direct_vm, c, direct_alice, direct_bob, **BAD_CREATES[why])
     assert c.get_engagement_count() == 0
+
+
+def test_the_deadline_may_be_exactly_two_years_out_and_no_further(direct_vm, direct_deploy, direct_alice, direct_bob):
+    c, fake = _setup(direct_vm, direct_deploy)
+    direct_vm.warp(T0)
+    _create(direct_vm, c, direct_alice, direct_bob, deadline=T0_TS + 730 * 86400)
+    assert c.get_engagement("e1")["deadline"] == T0_TS + 730 * 86400
+    with direct_vm.expect_revert("within two years"):
+        _create(direct_vm, c, direct_alice, direct_bob, eid="e2", deadline=T0_TS + 730 * 86400 + 1)
+    assert c.get_engagement_count() == 1
 
 
 def test_creation_needs_money_a_different_provider_and_a_new_id(direct_vm, direct_deploy, direct_alice, direct_bob):
@@ -854,13 +866,92 @@ def test_a_verified_release_nobody_could_confirm_splits_evenly_including_odd_amo
     with direct_vm.expect_revert("Not eligible"):
         c.reclaim_stale("e1")
     direct_vm.warp(AFTER_STALE)
-    c.reclaim_stale("e1")  # anyone
+    fake.now = _ts(AFTER_STALE)
+    c.reclaim_stale("e1")  # anyone; it only records the outcome, like release and refund_drift
+    assert sends == []
+    assert (c.get_engagement("e1")["status"], c.get_engagement("e1")["outcome"]) == ("decided", "split")
+    c.settle("e1")
     assert sorted(sends) == sorted([(_hex(direct_bob), 500), (_hex(direct_alice), 501)])
     assert sum(v for _, v in sends) == 1001
-    assert c.get_engagement("e1")["outcome"] == "split"
+    assert c.get_engagement("e1")["status"] == "settled"
     with direct_vm.expect_revert():
         c.reclaim_stale("e1")
+    with direct_vm.expect_revert():
+        c.settle("e1")
     assert len(sends) == 2
+
+
+def test_a_stale_split_cannot_override_a_drift_the_verifier_already_recorded(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
+    # The provider (or anyone) must not be able to turn a recorded drift into half the escrow by waiting for the stale point.
+    c, fake = _setup(direct_vm, direct_deploy)
+    sends = _capture_sends(direct_vm)
+    direct_vm.warp(T0)
+    _to_verified(direct_vm, c, fake, direct_alice, direct_bob)
+    _vouch(c, fake, status="drifted", checked_at=_ts(AFTER))
+    direct_vm.warp(AFTER_STALE)
+    direct_vm.sender = direct_bob
+    with direct_vm.expect_revert("drifted"):
+        c.reclaim_stale("e1")
+    assert c.get_engagement("e1")["status"] == "verified"
+    c.refund_drift("e1")  # the client's remedy still works
+    c.settle("e1")
+    assert sends == [(_hex(direct_alice), 1000)]
+
+
+def test_a_stale_split_cannot_override_a_verified_record_whose_digest_changed(direct_vm, direct_deploy, direct_alice, direct_bob):
+    # Still "verified", but it is no longer the file that was committed (publisher and file changed together): that is drift too.
+    c, fake = _setup(direct_vm, direct_deploy)
+    direct_vm.warp(T0)
+    _to_verified(direct_vm, c, fake, direct_alice, direct_bob)
+    _vouch(c, fake, digest=hashlib.sha256(b"another build").hexdigest(), checked_at=_ts(AFTER))
+    direct_vm.warp(AFTER_STALE)
+    with direct_vm.expect_revert("drifted"):
+        c.reclaim_stale("e1")
+    assert c.get_engagement("e1")["status"] == "verified"
+
+
+def test_a_stale_split_cannot_override_a_release_that_is_ready(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
+    # A fresh finalized check after the window means release applies; the client must not front-run it with a split.
+    c, fake = _setup(direct_vm, direct_deploy)
+    sends = _capture_sends(direct_vm)
+    direct_vm.warp(T0)
+    _to_verified(direct_vm, c, fake, direct_alice, direct_bob)
+    direct_vm.warp(AFTER_STALE)
+    fake.now = _ts(AFTER_STALE)
+    _vouch(c, fake, checked_at=_ts(AFTER_STALE) - 60)
+    direct_vm.sender = direct_alice
+    with direct_vm.expect_revert("release"):
+        c.reclaim_stale("e1")
+    c.release("e1")
+    c.settle("e1")
+    assert sends == [(_hex(direct_bob), 1000)]
+
+
+def test_a_stale_split_still_happens_when_the_verifier_cannot_be_read(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
+    # Unreadable is "nobody could confirm it", never drift: the split is exactly what stale recovery is for.
+    c, fake = _setup(direct_vm, direct_deploy)
+    sends = _capture_sends(direct_vm)
+    direct_vm.warp(T0)
+    _to_verified(direct_vm, c, fake, direct_alice, direct_bob)
+    direct_vm.warp(AFTER_STALE)
+    fake.fail = True
+    direct_vm.sender = direct_charlie
+    c.reclaim_stale("e1")
+    c.settle("e1")
+    assert sorted(sends) == sorted([(_hex(direct_bob), 500), (_hex(direct_alice), 500)])
+
+
+def test_a_stuck_submission_refund_needs_no_verifier_read_and_pays_in_one_step(direct_vm, direct_deploy, direct_alice, direct_bob):
+    c, fake = _setup(direct_vm, direct_deploy)
+    sends = _capture_sends(direct_vm)
+    direct_vm.warp(T0)
+    _to_submitted(direct_vm, c, direct_alice, direct_bob)
+    direct_vm.warp("2026-01-02T02:00:00Z")
+    direct_vm.sender = direct_alice
+    fake.fail = True
+    c.reclaim_stale("e1")
+    assert sends == [(_hex(direct_alice), 1000)]
+    assert fake.calls == []
 
 
 def test_reclaim_stale_does_not_touch_other_states(direct_vm, direct_deploy, direct_alice, direct_bob):

@@ -8,7 +8,9 @@
 //            release, settle, the provider is paid exactly once
 //   agreed   the verdict is fine but is not the digest the client agreed to: verify refuses, the client reclaims the stuck submission
 //   drift    a verified file is quietly replaced: the re-check records drift, the escrow refunds the client
-//   stale    verified but nobody confirms it again: after the stale point anyone can trigger the even split
+//   stale    verified but nobody confirms it again: after the stale point anyone records the even split, and settle pays it
+//   driftstale  a verified file is replaced, the drift is recorded and final, and the stale point passes: the provider's (and anyone's)
+//            attempt to turn it into half the escrow is refused; the client's refund still works and pays in full
 //   cancel   an unaccepted proposal is cancelled; a refused payable call is made with 1 wei to measure where its value goes
 // Release and stale paths wait out real windows (one hour minimum) and Bradbury finality (about 30 minutes).
 // Signs with the dedicated testnet wallets in C:/Users/olumi/.genlayer-test-wallets (outside every repo).
@@ -350,12 +352,69 @@ async function stale() {
   const p0 = await balance("gl-test-2");
   const c0 = await balance("gl-test-1");
   const t = await esc(scn, "gl-test-3", "reclaim_stale", [id]);
+  const rec = await until(scn, "split recorded", id, (x) => x.status === "decided" && x.outcome === "split");
+  if ((await balance("gl-test-2")) !== p0) throw new Error(`${scn}: the split moved money before settle`);
+  await finalized(scn, t.hash, "reclaim_stale (records the even split, moves no money)");
+  await expectRefused(scn, "gl-test-3", "reclaim_stale", [id]); // already decided
+  const st = await esc(scn, "gl-test-3", "settle", [id]);
   const done = await until(scn, "settled", id, (x) => x.status === "settled");
-  await finalized(scn, t.hash, "reclaim_stale (even split)");
+  await finalized(scn, st.hash, "settle (pays the split)");
   const p1 = await balance("gl-test-2");
   const c1 = await balance("gl-test-1");
-  log(scn, `split: outcome ${done.outcome}/${done.reason}; provider +${gen(p1 - p0)} (half = ${gen(AMOUNT / 2n)}), client +${gen(c1 - c0)} (half, before its own gas)`, { providerDelta: (p1 - p0).toString(), clientDelta: (c1 - c0).toString() });
+  log(scn, `split: outcome ${done.outcome}/${done.reason} (recorded as ${rec.status}); provider +${gen(p1 - p0)} (half = ${gen(AMOUNT / 2n)}), client +${gen(c1 - c0)} (half, before its own gas)`, { providerDelta: (p1 - p0).toString(), clientDelta: (c1 - c0).toString() });
   results.stale = { status: done.status, outcome: done.outcome, reason: done.reason, providerDelta: (p1 - p0).toString() };
+}
+
+// The exploit this scenario guards against: wait out the stale point after a recorded drift, then try to claim half.
+async function driftstale() {
+  const scn = "driftstl";
+  const id = `lad-${RUN}-driftstale`;
+  const name = "pack-driftstale.txt";
+  const art = DEMO + name;
+  const list = DEMO + "SHA256SUMS";
+  await verifiedAndFinal(scn, "gl-test-3", art, list, name, "");
+  await toSubmitted(scn, id, { artifact: art, list, name, parent: "", pin: DEMO });
+  const { e } = await verifyWhenFinal(scn, id, "gl-test-3");
+  const staleAt = Number(e.stale_at);
+  await serial("git", async () => {
+    writeFileSync("demo/pack-driftstale.txt", "Lading demo artifact for the drift-then-stale scenario\nThis is NOT the file that was verified.\n");
+    const git = (...a) => spawnSync("git", a, { encoding: "utf8" });
+    git("add", "demo/pack-driftstale.txt");
+    git("commit", "-m", `E2E ${RUN}: the verified file is replaced (drift then stale)`, "--", "demo/pack-driftstale.txt");
+    const push = git("push", "origin", "main");
+    log(scn, `file replaced and pushed (exit ${push.status}); waiting for the raw cache to expire`);
+  });
+  await sleep(330000);
+  const aid = await attId(art, list, name, "");
+  const c = await lin(scn, "gl-test-3", "check", [aid]);
+  const a = await read(LINEAGE, "get_attestation", [aid]);
+  log(scn, `the verifier now says ${a.status}`, { status: a.status });
+  if (a.status !== "drifted") throw new Error(`${scn}: the re-check did not record drift`);
+  await finalized(scn, c.hash, "re-check that recorded the drift");
+  log(scn, `drift is recorded and final; waiting for the stale point ${new Date(staleAt * 1000).toISOString()} WITHOUT asking for the refund`);
+  await sleep(Math.max(0, staleAt + 30 - now()) * 1000);
+  // the provider, anyone, and the client are all refused the split: the drift decides
+  await expectRefused(scn, "gl-test-2", "reclaim_stale", [id]);
+  await expectRefused(scn, "gl-test-3", "reclaim_stale", [id]);
+  await expectRefused(scn, "gl-test-1", "reclaim_stale", [id]);
+  if ((await eng(id)).status !== "verified") throw new Error(`${scn}: a refused split changed the state`);
+  const before = await balance("gl-test-1");
+  let decided = false;
+  for (let k = 1; k <= 6 && !decided; k++) {
+    const t = await esc(scn, "gl-test-3", "refund_drift", [id]);
+    decided = (await eng(id)).status === "decided";
+    if (!decided) {
+      log(scn, `refund_drift attempt ${k} not accepted (exec ${t.exec}), waiting`);
+      await sleep(120000);
+    }
+  }
+  if (!decided) throw new Error(`${scn}: refund_drift never recorded`);
+  const st = await esc(scn, "gl-test-3", "settle", [id]);
+  const done = await until(scn, "settled", id, (x) => x.status === "settled");
+  await finalized(scn, st.hash, "settle");
+  const after = await balance("gl-test-1");
+  log(scn, `the client was refunded in full after the stale point: outcome ${done.outcome}/${done.reason}; client balance ${gen(before)} -> ${gen(after)}`, { clientDelta: (after - before).toString() });
+  results.driftstale = { status: done.status, outcome: done.outcome, reason: done.reason, clientDelta: (after - before).toString() };
 }
 
 async function cancel() {
@@ -380,7 +439,7 @@ async function cancel() {
   results.cancel = { status: done.status, outcome: done.outcome, reason: done.reason };
 }
 
-const all = { happy, agreed, drift, stale, cancel };
+const all = { happy, agreed, drift, stale, driftstale, cancel };
 const order = Object.keys(all).filter((k) => !ONLY || ONLY.includes(k));
 const settled = await Promise.allSettled(order.map((k) => all[k]()));
 settled.forEach((s, i) => {

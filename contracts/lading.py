@@ -9,6 +9,7 @@ from genlayer.py.public_abi import StorageType
 
 MIN_WINDOW = 3600
 MAX_WINDOW = 7 * 86400
+MAX_AHEAD = 730 * 86400
 MIN_STALE = 7200
 MAX_STALE = 30 * 86400
 MAX_URL = 300
@@ -175,7 +176,7 @@ class Lading(gl.Contract):
         _bad(not isinstance(expected_digest, str) or (expected_digest != "" and (len(expected_digest) != 64 or any(c not in HEX for c in expected_digest))), "expected_digest must be empty or 64 lowercase hex digits")
         for x in (deadline, window, stale_after):
             _bad(not isinstance(x, int), "times must be whole numbers")
-        _bad(deadline <= self._now(), "deadline must be in the future")
+        _bad(deadline <= self._now() or deadline > self._now() + MAX_AHEAD, "deadline must be in the future, within two years")
         _bad(not MIN_WINDOW <= window <= MAX_WINDOW, f"window must be {MIN_WINDOW} to {MAX_WINDOW} seconds")
         _bad(not MIN_STALE <= stale_after <= MAX_STALE, f"stale_after must be {MIN_STALE} to {MAX_STALE} seconds")
         self.engagements[engagement_id] = Engagement(
@@ -249,6 +250,8 @@ class Lading(gl.Contract):
         amount = int(e.amount)
         if e.outcome == "provider":
             self._pay_out(engagement_id, e, amount, 0)
+        elif e.outcome == "split":
+            self._pay_out(engagement_id, e, amount // 2, amount - amount // 2)
         else:
             self._pay_out(engagement_id, e, 0, amount)
 
@@ -265,23 +268,25 @@ class Lading(gl.Contract):
 
     @gl.public.write
     def reclaim_stale(self, engagement_id: str) -> None:
-        """A stuck submission refunds the client (client only). A verified release that could never be confirmed splits evenly (anyone)."""
+        """A stuck submission refunds the client (client only, pays at once, reads nothing). A verified release nobody could confirm is
+        recorded as an even split (anyone) and paid by settle; it is refused while the verifier shows drift or a release is ready."""
         e = self._get(engagement_id)
         now = self._now()
         sub = e.status == SUBMITTED and now >= int(e.deadline) + int(e.stale_after)
         ver = e.status == VERIFIED and now >= int(e.verified_at) + int(e.window) + int(e.stale_after)
         _bad(not sub and not ver, f"Not eligible for stale recovery yet (status: {e.status})")
-        e.decided_at = now
-        amount = int(e.amount)
         if ver:
-            e.outcome = "split"
-            e.reason = "stale"
-            self._pay_out(engagement_id, e, amount // 2, amount - amount // 2)
-        else:
-            _bad(gl.message.sender_address != e.client, "Only the client can reclaim a stuck submission")
-            e.outcome = "client"
-            e.reason = "stale"
-            self._pay_out(engagement_id, e, 0, amount)
+            seen = self._seen(e, 0)
+            _bad(seen["read"] and not (seen["ok"] and seen["digest"] == e.digest), "The release has drifted, refund_drift applies")
+            ready = self._seen(e, int(e.verified_at) + int(e.window))
+            _bad(ready["read"] and ready["ok"] and ready["digest"] == e.digest, "A fresh check is in, release applies")
+            self._decide(e, "split", "stale")
+            return
+        _bad(gl.message.sender_address != e.client, "Only the client can reclaim a stuck submission")
+        e.decided_at = now
+        e.outcome = "client"
+        e.reason = "stale"
+        self._pay_out(engagement_id, e, 0, int(e.amount))
 
     @gl.public.view
     def attestation_id(self, artifact_url: str, manifest_url: str, filename: str, parent_id: str) -> str:
