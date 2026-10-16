@@ -159,6 +159,12 @@ class Lading {
     }
   }
 
+  /** Where a transaction stands, for writes that were recorded before a reload. */
+  async txStatus(hash: string): Promise<{ status: string; exec: string; receipt: any }> {
+    const r: any = await this.readClient.getTransaction({ hash });
+    return { status: String(r?.statusName ?? ""), exec: String(r?.txExecutionResultName ?? ""), receipt: r };
+  }
+
   // ---- the write path -------------------------------------------------------------------------
 
   /** Poll `pred` until it holds. Reads can lag a just-accepted write, so poll briefly. */

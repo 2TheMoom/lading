@@ -9,7 +9,7 @@ import { getAddressExplorerUrl, getTxExplorerUrl } from "@/lib/genlayer/chains";
 import { useWallet } from "@/lib/genlayer/wallet";
 import { usePendingWrites } from "@/lib/finality-store";
 import {
-  useAccept, useAttestation, useChain, useEngagement, useReclaimStale, useReclaimTimeout, useRecheck, useRefundDrift,
+  useAccept, useAttestation, useChain, useEngagement, useResumeFinality, useReclaimStale, useReclaimTimeout, useRecheck, useRefundDrift,
   useRelease, useSettle, useSubmit, useVerify,
 } from "@/lib/hooks/useLading";
 import { availableActions, driftedLinks, linksNeedingCheck, releaseBlocker, staleKind, staleSplitBlocker, windowOpen, type EngagementAction } from "@/lib/engagement-actions";
@@ -76,6 +76,7 @@ export default function Delivery() {
   const { data: chain = [] } = useChain(e?.attestation_id);
   const { data: att } = useAttestation(e?.attestation_id);
   const pending = usePendingWrites(id);
+  useResumeFinality(id);
 
   const accept = useAccept();
   const submit = useSubmit();

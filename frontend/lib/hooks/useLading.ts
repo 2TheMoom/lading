@@ -1,12 +1,13 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Lading, { type CreateArgs, type WriteProgress } from "../contracts/Lading";
 import { getContractAddress, getStudioUrl, getVerifierAddress } from "../genlayer/client";
 import { useWallet } from "../genlayer/wallet";
 import { success, error, info, configError } from "../utils/toast";
-import { addPendingWrite, settlePendingWrite } from "../finality-store";
+import { addPendingWrite, settlePendingWrite, takeRestoredWrites, releaseRestoredWrites } from "../finality-store";
+import { failedReceiptMessage } from "../receipt";
 import type { Attestation, ChainLink, Engagement } from "../contracts/types";
 import type { StaleKind } from "../engagement-actions";
 
@@ -40,6 +41,47 @@ export function useEngagement(id: string) {
     staleTime: 2000,
     enabled: !!contract && !!id,
   });
+}
+
+/**
+ * After a reload, writes that were recorded but not final come back from storage. Nobody is waiting on them any more, so watch them
+ * here until each transaction really finalizes (or fails), then say so and refresh what the page shows.
+ */
+export function useResumeFinality(id: string) {
+  const contract = useLadingContract();
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (!contract || !id) return;
+    const todo = takeRestoredWrites(id);
+    if (todo.length === 0) return;
+    let stopped = false;
+    const open = new Set(todo.map((w) => w.txHash));
+    todo.forEach((w) => {
+      (async () => {
+        while (!stopped) {
+          try {
+            const s = await contract.txStatus(w.txHash);
+            if (s.status === "FINALIZED") {
+              const failure = failedReceiptMessage(s.receipt, w.label, w.txHash);
+              settlePendingWrite(id, w.txHash, failure ?? undefined);
+              open.delete(w.txHash);
+              queryClient.invalidateQueries({ queryKey: ["engagement", id] });
+              queryClient.invalidateQueries({ queryKey: ["chain"] });
+              queryClient.invalidateQueries({ queryKey: ["attestation"] });
+              return;
+            }
+          } catch {
+            // the network blinked: try again
+          }
+          await new Promise((r) => setTimeout(r, 20000));
+        }
+      })();
+    });
+    return () => {
+      stopped = true;
+      releaseRestoredWrites(todo.filter((w) => open.has(w.txHash)));
+    };
+  }, [contract, id, queryClient]);
 }
 
 /** The verifier's chain of custody for an attestation: what the escrow will read once it finalizes. */
