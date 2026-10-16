@@ -3,6 +3,7 @@
 import { createClient } from "genlayer-js";
 import { createWalletClient, custom, type WalletClient } from "viem";
 import { getGenLayerChain } from "./chains";
+import { findMetaMask } from "./provider";
 
 // GenLayer Network Configuration (from environment variables with fallbacks)
 // Defaults target Bradbury testnet, where Lading is deployed.
@@ -78,7 +79,7 @@ export function getVerifierAddress(): string {
  */
 export function isMetaMaskInstalled(): boolean {
   if (typeof window === "undefined") return false;
-  return !!window.ethereum?.isMetaMask;
+  return !!findMetaMask()?.isMetaMask;
 }
 
 /**
@@ -86,7 +87,22 @@ export function isMetaMaskInstalled(): boolean {
  */
 export function getEthereumProvider(): EthereumProvider | null {
   if (typeof window === "undefined") return null;
-  return window.ethereum || null;
+  return findMetaMask();
+}
+
+/** The GenLayer wallet plugin (a MetaMask Snap), installed once per wallet. */
+export const GENLAYER_SNAP_ID = "npm:genlayer-wallet-plugin";
+
+/**
+ * What genlayer-js's own connect() does (switch to Bradbury, install the GenLayer snap), but against the provider we chose.
+ * connect() reaches for window.ethereum directly, which is whichever wallet won that slot, and that can be a different wallet.
+ */
+export async function prepareWalletForWrites(provider: EthereumProvider): Promise<void> {
+  const current = await provider.request({ method: "eth_chainId" });
+  if (parseInt(String(current), 16) !== GENLAYER_CHAIN_ID) await switchToGenLayerNetwork();
+  const snaps = await provider.request({ method: "wallet_getSnaps" }).catch(() => ({}));
+  const installed = Object.values(snaps ?? {}).some((s: any) => s?.id === GENLAYER_SNAP_ID);
+  if (!installed) await provider.request({ method: "wallet_requestSnaps", params: { [GENLAYER_SNAP_ID]: {} } as any });
 }
 
 /**

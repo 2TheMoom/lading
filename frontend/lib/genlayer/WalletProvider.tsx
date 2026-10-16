@@ -12,6 +12,7 @@ import {
   GENLAYER_CHAIN_ID,
 } from "./client";
 import { error, userRejected, warning } from "../utils/toast";
+import { withTimeout } from "./provider";
 
 // localStorage key for tracking user's disconnect intent
 const DISCONNECT_FLAG = "wallet_disconnected";
@@ -89,9 +90,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         // Get current accounts (without requesting)
         // This will auto-reconnect if MetaMask has existing permissions
         // and user didn't explicitly disconnect
-        const accounts = await getAccounts();
-        const chainId = await getCurrentChainId();
-        const correctNetwork = await isOnGenLayerNetwork();
+        // A wallet that never answers must not leave the page on "Connecting": give up after a few seconds and show it as not connected.
+        const accounts = await withTimeout(getAccounts(), 5000, [] as string[]);
+        const chainId = await withTimeout(getCurrentChainId(), 5000, null as string | null);
+        const correctNetwork = chainId !== null && parseInt(chainId, 16) === GENLAYER_CHAIN_ID;
 
         setState({
           address: accounts[0] || null,

@@ -1,5 +1,6 @@
 import { createClient } from "genlayer-js";
 import { getGenLayerChain } from "../genlayer/chains";
+import { getEthereumProvider, prepareWalletForWrites } from "../genlayer/client";
 import type { Attestation, ChainLink, Engagement } from "./types";
 import { decodeAttestation, decodeChain, decodeEngagement } from "./decode";
 import { failedReceiptMessage, isContractRefusal } from "../receipt";
@@ -90,13 +91,13 @@ class Lading {
   /** The provider-backed client, connected to the chain. Created lazily so reads never need a wallet. */
   private async writer(): Promise<any> {
     if (!this.address) throw new Error("Wallet not connected. Please connect your wallet first.");
-    const provider = typeof window !== "undefined" ? (window as any).ethereum : undefined;
+    const provider = getEthereumProvider();
     if (!provider) throw new Error("No wallet found. Install MetaMask to sign transactions.");
     if (!this.writeClient || this.connectedFor !== this.address) {
       const config: any = { chain: getGenLayerChain(), account: this.address as `0x${string}`, provider };
       if (this.rpcUrl) config.endpoint = this.rpcUrl;
       const client = createClient(config);
-      await client.connect("testnetBradbury");
+      await prepareWalletForWrites(provider);
       this.writeClient = client;
       this.connectedFor = this.address;
     }
