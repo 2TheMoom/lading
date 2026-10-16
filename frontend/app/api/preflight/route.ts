@@ -43,11 +43,19 @@ function privateAddress(ip: string): boolean {
   return v === "::1" || v === "::" || v.startsWith("fc") || v.startsWith("fd") || v.startsWith("fe8") || v.startsWith("fe9") || v.startsWith("fea") || v.startsWith("feb") || v.startsWith("::ffff:");
 }
 
-async function assertPublic(url: string): Promise<void> {
-  const bad = urlProblem(url);
-  if (bad) throw new Error(bad);
-  const host = new URL(url).hostname;
-  const addrs = await lookup(host, { all: true });
+/**
+ * The URLs the contract stores follow the contract's rules (checked on entry). A redirect target is not stored, so it
+ * only has to be a plain https address on a public host: release downloads redirect to long signed URLs.
+ */
+async function assertPublic(url: string, entry: boolean): Promise<void> {
+  if (entry) {
+    const bad = urlProblem(url);
+    if (bad) throw new Error(bad);
+  }
+  const u = new URL(url);
+  if (u.protocol !== "https:" || u.port || u.username || u.password) throw new Error("Only plain https addresses are followed.");
+  if (isIP(u.hostname.replace(/^\[|\]$/g, "")) !== 0) throw new Error("An address, not a domain name, was given.");
+  const addrs = await lookup(u.hostname, { all: true });
   if (addrs.length === 0 || addrs.some((a) => privateAddress(a.address))) throw new Error("The host does not resolve to a public address.");
 }
 
@@ -64,7 +72,7 @@ interface Fetched {
 async function fetchLimited(start: string, maxBytes: number, wantText: boolean): Promise<Fetched> {
   let url = start;
   for (let hop = 0; hop <= MAX_HOPS; hop++) {
-    await assertPublic(url);
+    await assertPublic(url, hop === 0);
     const res = await fetch(url, { method: "GET", headers: HEADERS, redirect: "manual", signal: AbortSignal.timeout(TIMEOUT_MS) });
     if (res.status >= 300 && res.status < 400) {
       const loc = res.headers.get("location");
