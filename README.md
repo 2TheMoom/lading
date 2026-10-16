@@ -48,7 +48,7 @@ The verifier's verdict is deterministic: each validator downloads the artifact a
 
 Deployed on **GenLayer Bradbury Testnet** (chain ID 4221):
 
-- **Escrow:** [`0xacc591981a7F4B059aE9E5C9a4Cd79aC7fe56A45`](https://explorer-bradbury.genlayer.com/address/0xacc591981a7F4B059aE9E5C9a4Cd79aC7fe56A45)
+- **Escrow:** [`0xd325abD9d0cAE02594Ec7dEe53091CCa2356983e`](https://explorer-bradbury.genlayer.com/address/0xd325abD9d0cAE02594Ec7dEe53091CCa2356983e) (the audited contract; the first deployment, [`0xacc591981a7F4B059aE9E5C9a4Cd79aC7fe56A45`](https://explorer-bradbury.genlayer.com/address/0xacc591981a7F4B059aE9E5C9a4Cd79aC7fe56A45), is superseded and kept only for the round 1 evidence below)
 - **Verifier (Lineage v2):** [`0x6508856DE231e094BfD121Eb5A30D5C3c03972A9`](https://explorer-bradbury.genlayer.com/address/0x6508856DE231e094BfD121Eb5A30D5C3c03972A9)
 - **App and landing page:** https://lading-frontend.vercel.app (try [a settled delivery](https://lading-frontend.vercel.app/app/d/lad-ui-1))
 
@@ -68,7 +68,8 @@ The threat list was written before the code and each row is tested.
 | The verifier being swapped for a malicious one | Fixed in the constructor, no setter, no owner | `test_the_verifier_is_fixed_for_the_life_of_the_contract` |
 | Attestation id squatting or collision | The id is the sha256 of artifact, list, filename and parent; `\|` is refused in URLs; the escrow derives the id itself with the same URL rules | id and URL tests |
 | A caller acting out of role | Provider-only, client-only and permissionless entry points, each tested for the wrong caller | access tests |
-| Funds locked forever | Deadline, stale recovery for both stuck states, a bounded window and stale range | timeout and stale tests, live runs |
+| Funds locked forever | Deadline (at most two years out), stale recovery for both stuck states, a bounded window and stale range | timeout and stale tests, live runs |
+| A recorded drift turned into half the escrow by waiting for the stale point | Stale recovery of a verified release is refused while the verifier's finalized state shows drift (or a different digest) or a fresh check on every link; it only records the split, and `settle` pays it | `test_a_stale_split_cannot_override_a_drift_the_verifier_already_recorded`, the digest-changed and release-ready variants, the live `driftstale` run |
 
 **Known and disclosed, not hidden:**
 
@@ -85,16 +86,156 @@ The threat list was written before the code and each row is tested.
 | Test type | Command | What it covers |
 |---|---|---|
 | Lint | `genvm-lint check contracts/lading.py` | static checks |
-| Direct | `python -m pytest tests/direct/ -v` | 113 in-memory tests with a fake verifier that models the real one and records every call |
-| Frontend logic | `cd frontend && npm test` | action rules, limits mirrored from the contract, decoding, finality rules |
+| Direct | `python -m pytest tests/direct/ -v` | 121 in-memory tests with a fake verifier that models the real one and records every call |
+| Frontend logic | `cd frontend && npm test` | 43 tests: action rules, limits mirrored from the contract, decoding, finality rules, read errors |
 | Live | `LADING=0x... node scripts/e2e.mjs` | the Bradbury run described below, separate client, provider and third-party wallets |
 
-Every rule was mutation-checked: 105 deliberate breakages of the contract, 102 caught by a test. The 3 survivors are the payout bookkeeping (the amounts-sum check, the duplicate-payout guard and the payout record) which sit behind the status machine: no input can reach them, so they stay as a second line of defense.
+Every rule was mutation-checked: 118 deliberate breakages of the contract, 114 caught by a test. Four survive. Three are the payout bookkeeping (the amounts-sum check, the duplicate-payout guard and the payout record), which sit behind the status machine: no input can reach them, so they stay as a second line of defense. The fourth is an equivalent mutant (dropping a `read` check that an `ok` check already implies), so no test can tell it apart.
+
+## Audit before the demo
+
+Before any demo or wallet run the whole stack was audited again, by reading it, by attacking it, and by running it. Seven things were found and fixed. The first one is the serious one.
+
+| # | Where | What was wrong | Fix |
+|---|---|---|---|
+| 1 | Contract: `reclaim_stale` on a verified release | It paid an even split without asking the verifier anything. After the stale point the provider (or anyone) could turn a drift the verifier had already recorded into half the escrow, and the client lost the other half they were owed. A failing test proved it first. | The split is now only recorded (`decided`, outcome `split`) and `settle` pays it, so no payment shares a transaction with a verifier read. It is refused while the verifier's finalized state shows drift or a changed digest, and while a fresh check on every link means `release` applies. An unreadable verifier still allows the split, because unreadable means "nobody could confirm it", never drift. |
+| 2 | Contract: deadline | A deadline past the u256 range would fail when stored, and a refused payable call keeps its value on Bradbury. | The deadline must be within two years. Boundary tested. |
+| 3 | App: the form | The contract checks the whole URL for forbidden characters and length before it drops the fragment. The form dropped the fragment first, so a pasted URL like `...#a b` passed the form and was refused on-chain, stranding the funds. | The form validates the raw URL. A differential fuzz of the contract's own URL and filename rules against the form's, about 52,000 inputs over four seeds, now finds nothing the form allows that the contract refuses. The form is stricter in one place only (U+FEFF). |
+| 4 | App: `/api/preflight` | It resolved a host to check it, then resolved again to connect, so a hostile DNS server could answer "public" for the check and "internal" for the connection. | The address is checked at connect time, inside the connection's own lookup, and compression is off so a decompression bomb cannot hide in a small download. Checked live: loopback, link-local metadata and 10.x hosts are refused. |
+| 5 | App: reads | Any dropped RPC call was reported as "No delivery called ...", or silently removed a row from the list. | Only a refusal by the contract means "not found"; a network failure is an error, the page keeps what it had, and offers to try again. |
+| 6 | App: stale recovery | The buttons, labels and finality checks assumed the split pays at once. The settle button said "refund the client" on a split. | The app now knows the split takes two steps, says so, says why a split is blocked (a drift or a ready release), and labels the settle button correctly. |
+| 7 | App: funding | The verifier registration that comes before funding was reported as "Escrow funded: recorded", and its finality toast said "Escrow funded, final", before any money had moved. | A transaction to the verifier is reported in the verifier's words ("Release registered with the verifier"). |
+
+Method, so the claims can be checked: the contract fix was written test first (the new tests failed against the old contract), then the contract was mutation-checked again (118 mutants, 114 caught; four survivors, explained above), the form was fuzzed against the contract's own rules, and then everything below was run live against a fresh deployment of the fixed contract.
 
 <!--LIVE_START-->
-## Live evidence (Bradbury)
+## Live evidence, round 2: the audited contract (Bradbury)
 
-Escrow `0xacc591981a7F4B059aE9E5C9a4Cd79aC7fe56A45`, verifier `0x6508856DE231e094BfD121Eb5A30D5C3c03972A9` (Lineage v2). `scripts/e2e.mjs` ran every scenario below against the deployed contracts with a **separate client wallet, provider wallet and third-party wallet**, and every write was confirmed by reading state back. Run `mva4y6rp` (`scripts/e2e-log-main.json`) did the happy, agreed, drift and stale scenarios; the cancel scenario was repeated alone after fixing a race in the script's own check (`scripts/e2e-log-cancel.json`, run `mvaew35p`). Money paths wait out real windows (one hour minimum) and Bradbury finality (about 30 minutes).
+Escrow `0xd325abD9d0cAE02594Ec7dEe53091CCa2356983e`, verifier `0x6508856DE231e094BfD121Eb5A30D5C3c03972A9` (Lineage v2, unchanged). Deployed with `scripts/deploy.mjs`. `scripts/e2e.mjs` ran the happy, agreed, stale, drift-then-stale and cancel scenarios with a **separate client wallet, provider wallet and third-party wallet**, and every write was confirmed by reading state back (full machine-readable log: `scripts/e2e-log-v3.json`, run `mvb2wtva`). The plain drift scenario was not repeated on this contract: `refund_drift` was not touched by the audit and its round 1 run below still applies; the new `driftstale` run exercises it again at the stale point.
+
+What round 2 adds that round 1 could not show: the even split is recorded in one transaction and paid in another, and a drift that the verifier has already recorded cannot be turned into half the escrow, even after the stale point, even by the provider.
+
+#### Happy path: the real jq 1.7.1 release (source tarball, then the linux-amd64 binary built from it), agreed digest
+
+| # | Call | Transaction | Result |
+|---|---|---|---|
+| 1 | `escrow.create_engagement` | [`0xdea338b13b`](https://explorer-bradbury.genlayer.com/tx/0xdea338b13b3ebae1bf53aefc67f981209293fc642ba56e53a4429a8f00a3edcd) | accepted |
+| 2 | `escrow.accept` | [`0x4b3b232b06`](https://explorer-bradbury.genlayer.com/tx/0x4b3b232b06fc5b175e91a804e8e4608f0fe24ff50e6d4247d3ca0a87ab0fe2a8) | accepted |
+| 3 | `escrow.submit` | [`0x29d0ba20ad`](https://explorer-bradbury.genlayer.com/tx/0x29d0ba20ada8cd757637eb36d880e912d6005efe527e1543deb8b3f2659cf6ef) | accepted |
+| 4 | `escrow.verify` | [`0x93ffa37e1b`](https://explorer-bradbury.genlayer.com/tx/0x93ffa37e1b874292ee5aece6dcc17a2baa0f8fca482bcbeb3325d18adcfaf041) | accepted |
+| 5 | `escrow.refund_drift` | [`0x0cb2c8b388`](https://explorer-bradbury.genlayer.com/tx/0x0cb2c8b388bdb61ab6f1feee6b99e224e12af12c625687250b3d4bd449c551eb) | refused by the contract (state unchanged) |
+| 6 | `escrow.release` | [`0x5d49e3fa31`](https://explorer-bradbury.genlayer.com/tx/0x5d49e3fa31e66011fb11224dffd7f506fe99907107f0052d3c373fd07e73f239) | refused by the contract (state unchanged) |
+| 7 | `verifier.check` | [`0xb38359773d`](https://explorer-bradbury.genlayer.com/tx/0xb38359773d8ef3b93d5825de4a28615cfd99979035ddca0688237d15e9533b30) | accepted |
+| 8 | `verifier.check` | [`0xd37b650f19`](https://explorer-bradbury.genlayer.com/tx/0xd37b650f19563f5b489668d2ad0de79b380e1fcee525e45e5c81a02b26df4e61) | accepted |
+| 9 | `escrow.release` | [`0x492d704c57`](https://explorer-bradbury.genlayer.com/tx/0x492d704c570efc291dbf931c3e5ea33010236ceb9d05d657a32e9bc8f158181a) | refused by the contract (state unchanged) |
+| 10 | `escrow.release` | [`0xefef5f6189`](https://explorer-bradbury.genlayer.com/tx/0xefef5f61895d538bf0ce825802fb7a66d09875ac1daec7e25325b9b3404a37c5) | accepted |
+| 11 | `escrow.release` | [`0xfe46a00d90`](https://explorer-bradbury.genlayer.com/tx/0xfe46a00d90b64ccad299864f5278afc967e9fb2d7dbdc9f43d69028dae3f0a0a) | refused by the contract (state unchanged) |
+| 12 | `escrow.settle` | [`0x67e0987dd5`](https://explorer-bradbury.genlayer.com/tx/0x67e0987dd54fd82ca65b80262e9a90322394cb559303fb77031fa60eef0efc3a) | accepted |
+| 13 | `escrow.settle` | [`0x15f7e84919`](https://explorer-bradbury.genlayer.com/tx/0x15f7e84919ddb87b8272d30679c5a5d8bca37a8c47ed7f5c6c8841d5aef9aee1) | refused by the contract (state unchanged) |
+
+- verified on attempt 1: digest 5942c9b0934e510e..., links 2, window ends 2026-10-16T15:48:15.000Z
+- watch window open until 2026-10-16T15:48:15.000Z, waiting 60 min
+- post-window check of the source FINALIZED 29.4 min after the wait began
+- post-window check of the build FINALIZED 0.4 min after the wait began
+- release attempt 1 not accepted (exec FINISHED_WITH_RETURN), waiting
+- settle FINALIZED 30.1 min after the wait began
+
+#### The verdict is fine but is not the digest the client agreed to
+
+| # | Call | Transaction | Result |
+|---|---|---|---|
+| 1 | `escrow.create_engagement` | [`0x555b37c047`](https://explorer-bradbury.genlayer.com/tx/0x555b37c047f16f20d120611627704d6f45d62fe29ce839fee32d2a930416ae14) | accepted |
+| 2 | `escrow.accept` | [`0x806983b0a3`](https://explorer-bradbury.genlayer.com/tx/0x806983b0a346f11369427827a5b93d02ea3992c8db1c311702f2025fea216298) | accepted |
+| 3 | `escrow.submit` | [`0x603baae3a0`](https://explorer-bradbury.genlayer.com/tx/0x603baae3a07569800602d1325578be11fcf7d93124d6b2d96b255479b7435205) | accepted |
+| 4 | `escrow.verify` | [`0xcdc905832a`](https://explorer-bradbury.genlayer.com/tx/0xcdc905832a9a1347990252227038e752c268871ee09921695e7544692e40f824) | refused by the contract (state unchanged) |
+| 5 | `escrow.reclaim_stale` | [`0xed6cf0a8d4`](https://explorer-bradbury.genlayer.com/tx/0xed6cf0a8d463014f860b49f861c7ee4b92c90eb0c13b75cd28e4f8410f0630ab) | refused by the contract (state unchanged) |
+| 6 | `escrow.reclaim_stale` | [`0x3362a4429a`](https://explorer-bradbury.genlayer.com/tx/0x3362a4429af6c745100cb0d86df873d571501766b198edd6a698f6845dc6cb76) | refused by the contract (state unchanged) |
+| 7 | `escrow.reclaim_stale` | [`0x9d572ed93f`](https://explorer-bradbury.genlayer.com/tx/0x9d572ed93f66f7fddf313501c3436c6de222803234916a1fc5c0bd3f2112f990) | accepted |
+
+- stuck submission, recoverable at 2026-10-16T17:00:13.000Z, waiting 134 min
+- reclaim_stale FINALIZED 30.0 min after the wait began
+- refunded: outcome client/stale; client balance 4.897306 -> 4.899155 (before its own gas)
+
+#### Verified, but nobody confirms it again: the even split is now recorded, then paid in its own transaction
+
+| # | Call | Transaction | Result |
+|---|---|---|---|
+| 1 | `escrow.create_engagement` | [`0x9d27d56992`](https://explorer-bradbury.genlayer.com/tx/0x9d27d56992b8a61dde8f5feb6f65a58fca07ad444c126206b56c35bc33ce5c81) | accepted |
+| 2 | `escrow.accept` | [`0xb1b5875626`](https://explorer-bradbury.genlayer.com/tx/0xb1b5875626843cad95ced68a389e2ff0824a00e5a77fcc38078c596a46552c9a) | accepted |
+| 3 | `escrow.submit` | [`0x0e7c3e546a`](https://explorer-bradbury.genlayer.com/tx/0x0e7c3e546a1800e1d8cc9460aadd3ff18d30b31b5e83b4daed8aba7baf08ffe0) | accepted |
+| 4 | `escrow.verify` | [`0xd6a8161461`](https://explorer-bradbury.genlayer.com/tx/0xd6a816146185b7c9035a22c9e51229cb22af1206bf8518dee34c98ead358387b) | accepted |
+| 5 | `escrow.reclaim_stale` | [`0x21567f2d14`](https://explorer-bradbury.genlayer.com/tx/0x21567f2d1461ba6e081ef415ecc1bbd81ba92ea7366b25b875e3bf77c27823e3) | refused by the contract (state unchanged) |
+| 6 | `escrow.release` | [`0x338734911e`](https://explorer-bradbury.genlayer.com/tx/0x338734911e1989b718d6d6531e97431f18080e265acb750daae038dc36281d6c) | refused by the contract (state unchanged) |
+| 7 | `escrow.reclaim_stale` | [`0x5cfbbf6a24`](https://explorer-bradbury.genlayer.com/tx/0x5cfbbf6a24527c2494a737bc8cda77ce6d5e005a2931f3adc722fcf3e0900604) | accepted |
+| 8 | `escrow.reclaim_stale` | [`0xbfd2a7942a`](https://explorer-bradbury.genlayer.com/tx/0xbfd2a7942aa5b1caddecca463789308fb72cd5e78f8970021b73d33d1c3bca3f) | refused by the contract (state unchanged) |
+| 9 | `escrow.settle` | [`0x693f574846`](https://explorer-bradbury.genlayer.com/tx/0x693f574846b0ef0ef7e95b60a824732e0c7b7358720fc61a682dce3716bf0373) | accepted |
+
+- verified on attempt 1: digest a927dc83b4013aa1..., links 1, window ends 2026-10-16T15:46:58.000Z
+- nobody confirms it again; stale point 2026-10-16T17:46:58.000Z, waiting 120 min
+- reclaim_stale (records the even split, moves no money) FINALIZED 30.1 min after the wait began
+- FAILED: stale: settle (pays the split) did not finalize in time
+
+#### A recorded drift outlives the stale point: nobody can turn it into half the escrow
+
+| # | Call | Transaction | Result |
+|---|---|---|---|
+| 1 | `verifier.attest` | [`0x79472faa60`](https://explorer-bradbury.genlayer.com/tx/0x79472faa60985edcc0fc1d6b16ef6f43a3a8c02acd737c6505a694686c21fece) | accepted |
+| 2 | `verifier.check` | [`0x9d7e6e36dc`](https://explorer-bradbury.genlayer.com/tx/0x9d7e6e36dc0c20e8918aeaf5cf988a9fe45f4c3c771c47097520cc052f84a7e5) | accepted |
+| 3 | `escrow.create_engagement` | [`0x27d5ac6823`](https://explorer-bradbury.genlayer.com/tx/0x27d5ac68236f94fc2a685417b893db77ffc1798666a52e0fed44476a88dd3ca8) | accepted |
+| 4 | `escrow.accept` | [`0x02e1362380`](https://explorer-bradbury.genlayer.com/tx/0x02e1362380099fc2cbfe620f0a7655a9b29702a99f129e179d3822ded43fa65c) | accepted |
+| 5 | `escrow.submit` | [`0x6ff1022ca8`](https://explorer-bradbury.genlayer.com/tx/0x6ff1022ca864c4f7b92b82466be91b3245f5fe242dd784c4ebfd6b1af8139d04) | accepted |
+| 6 | `escrow.verify` | [`0xa623c7a6f5`](https://explorer-bradbury.genlayer.com/tx/0xa623c7a6f5a3a2159b81bb290d9ba7c178ec8a46ce72c626a68751f17de5f73b) | accepted |
+| 7 | `verifier.check` | [`0x18d206924f`](https://explorer-bradbury.genlayer.com/tx/0x18d206924f98b3690732735ce6f39a81afbb01ca2e19de8d0029d0f2672cae27) | accepted |
+| 8 | `escrow.reclaim_stale` | [`0xb5cea26542`](https://explorer-bradbury.genlayer.com/tx/0xb5cea265428aad091c2e48ba6f99d0135b0ebfbb5cb453d03e4eed433e65e8d9) | refused by the contract (state unchanged) |
+| 9 | `escrow.reclaim_stale` | [`0x58a4af0690`](https://explorer-bradbury.genlayer.com/tx/0x58a4af0690988c58c1a4070f478b806d74c097e841792566711f65d1587d61a9) | refused by the contract (state unchanged) |
+| 10 | `escrow.refund_drift` | [`0x0a7df25cbf`](https://explorer-bradbury.genlayer.com/tx/0x0a7df25cbf59926baf7192b8b55cd8e1e693634e79e8d36d72c65f18ba3d7309) | accepted |
+| 11 | `escrow.settle` | [`0xac353c260d`](https://explorer-bradbury.genlayer.com/tx/0xac353c260d8bf991bfba62cc304476fbef77bddbf04216d6b85ce0051c9f36da) | accepted |
+
+- check of pack-driftstale.txt FINALIZED 30.1 min after the wait began
+- verified on attempt 1: digest 63acb8d395cd6ffa..., links 1, window ends 2026-10-16T16:17:22.000Z
+- file replaced and pushed (exit 0); waiting for the raw cache to expire
+- the verifier now says drifted
+- re-check that recorded the drift FINALIZED 30.1 min after the wait began
+- drift is recorded and final; waiting for the stale point 2026-10-16T18:17:22.000Z WITHOUT asking for the refund
+
+#### A refused payable call, wrong callers, and a client cancel
+
+| # | Call | Transaction | Result |
+|---|---|---|---|
+| 1 | `escrow.create_engagement` | [`0x357f92a35b`](https://explorer-bradbury.genlayer.com/tx/0x357f92a35ba8f9f291cd64443a29d9321f00dab30ce3e8daab2cdedcfd7e898f) | refused by the contract (state unchanged) |
+| 2 | `escrow.create_engagement` | [`0x367aea87e8`](https://explorer-bradbury.genlayer.com/tx/0x367aea87e814b565475ecd0e6eaa3989da02033d20fb9d6758b02419c7548d8d) | accepted |
+| 3 | `escrow.reclaim_timeout` | [`0xfd6a629568`](https://explorer-bradbury.genlayer.com/tx/0xfd6a629568bfc56db6a167571a6ba246b0ed1639d067fffd1f98124374239d7a) | refused by the contract (state unchanged) |
+| 4 | `escrow.reclaim_timeout` | [`0x3ed3173f9a`](https://explorer-bradbury.genlayer.com/tx/0x3ed3173f9aaec0946a77556474da618cb25c7bf74e88e028e0641c9a4fa9f77a) | refused by the contract (state unchanged) |
+| 5 | `escrow.reclaim_timeout` | [`0x54264bdb6e`](https://explorer-bradbury.genlayer.com/tx/0x54264bdb6e07fb0961f3e46f2388f2c383fc8dac6d5a96540f6bebed04ab0bbd) | accepted |
+| 6 | `escrow.reclaim_timeout` | [`0x4b4f02195a`](https://explorer-bradbury.genlayer.com/tx/0x4b4f02195a341f7cc9e952cfe35b6b5b774895200a6dabdaf704022f9c1b373f) | refused by the contract (state unchanged) |
+
+- reclaim_timeout FINALIZED 29.6 min after the wait began
+
+Two transactions in the table are worth reading closely. In the drift-then-stale run, the provider's own `reclaim_stale` was refused before it was even sent (the node's pre-flight simulation reverted it), and the third-party and client attempts that were sent were refused by the contract with state unchanged; the client's `refund_drift` and `settle` then returned the full 0.002 GEN. In the stale run, the first `reclaim_stale` only recorded the split, a second one was refused, and `settle` paid it.
+
+A note on honesty about the run itself: the script lost its network connection for a while near the end (a stream of "fetch failed" errors), so its own last finality waits for the stale and drift-then-stale settles timed out and it printed an accounting mismatch. Nothing on chain was affected. Read straight from the chain afterwards: all five engagements are `settled` with the outcomes above, every `settle`, `refund_drift` and `reclaim_stale` transaction is `FINALIZED` with `FINISHED_WITH_RETURN`, and the accounting is `{"balance": 2000000000000001, "in_flight": 1, "shortfall": 0, "total_received": "12000000000000000", "total_scheduled": "10000000000000000", "unscheduled": 2000000000000000}`: nothing short, the only surplus is the 1 wei a refused payable call left behind, and the 0.002 GEN still owed is the app-driven engagement described next.
+
+### The audited app, driven with fresh wallets: stale recovery
+
+The new two-step stale recovery was also driven through the app's own buttons against the audited contract, with wallets no script was using: a client (`gl-test-4`), a provider (`gl-test-5`) and a third party (`gl-test-3`), signing through the wallet shim. The engagement is `lad-ui-stale`, a 91-byte demo file (`demo/pack-uistale.txt`), 0.002 GEN, a one hour watch window and a two hour stale period.
+
+| Step | Who | What the app did |
+|---|---|---|
+| Fund | client | The form's preflight downloaded and hashed the file (match, 91 bytes) before Fund was enabled. Funding registered the release with the verifier, then created the escrow. |
+| Accept, ship, check | provider | Accepted the exact terms, marked it shipped, asked the validators to check the file. |
+| Verify too early | provider | Pressed Verify before the check had finalized. The contract refused it and the app said so: "The contract refused verify. Nothing changed." |
+| Verify | provider | After the check finalized, Verify succeeded: "Verified: the digest matches", watch window running. |
+| After the stale point | third party | Nobody re-checked the file after the window. The app offered **Record an even split** and kept Record the release and Record a refund greyed out, as they should be. |
+| Record the split | third party | [`0xd1e7a811a7`](https://explorer-bradbury.genlayer.com/tx/0xd1e7a811a7d2639faf6155a13df04754f808219615a9d25b2de8bacd5ed14291) recorded "split evenly" and moved no money; the app said so and the button became **Settle: split evenly**. |
+| Settle | third party | [`0xa13f9d3d6a`](https://explorer-bradbury.genlayer.com/tx/0xa13f9d3d6afa457200d3bd33f2d1326176b6c5842c74b30706d17a0058a8b574) sent. |
+
+Status of this run, stated plainly: the split was recorded and the settle was sent through the app, but the confirmation that each wallet gained exactly 0.001 GEN once that settle finalized is **not in this README yet**. Bradbury's network was unstable at the time (the round 2 script lost its connection too), so that check will be rerun and added when the network is steadier. The scripted `stale` scenario above is the evidence for the two-step payout until then.
+
+Running the app also found two honesty problems that were fixed in the app (see the audit table): the verifier registration before funding was reported as "Escrow funded", and the settle button said "refund the client" on a split.
+
+## Live evidence, round 1: the first deployment (Bradbury)
+
+Escrow `0xacc591981a7F4B059aE9E5C9a4Cd79aC7fe56A45` (superseded by the audited contract above), verifier `0x6508856DE231e094BfD121Eb5A30D5C3c03972A9` (Lineage v2). `scripts/e2e.mjs` ran every scenario below against the deployed contracts with a **separate client wallet, provider wallet and third-party wallet**, and every write was confirmed by reading state back. Run `mva4y6rp` (`scripts/e2e-log-main.json`) did the happy, agreed, drift and stale scenarios; the cancel scenario was repeated alone after fixing a race in the script's own check (`scripts/e2e-log-cancel.json`, run `mvaew35p`). Money paths wait out real windows (one hour minimum) and Bradbury finality (about 30 minutes).
 
 ### Happy path: the real jq 1.7.1 release (source tarball, then the linux-amd64 binary built from it), pinned to the jq release path, with an agreed digest
 
@@ -167,7 +308,7 @@ Escrow `0xacc591981a7F4B059aE9E5C9a4Cd79aC7fe56A45`, verifier `0x6508856DE231e09
 - settle FINALIZED 29.9 min after the wait began
 - refunded after drift: outcome client/drifted; client balance 4.905068 -> 4.907068
 
-### Verified, but nobody confirms it again
+### Verified, but nobody confirms it again (round 1: the split was paid in the same transaction, which the audit changed)
 
 | # | Call | Transaction | Result |
 |---|---|---|---|
@@ -250,8 +391,9 @@ The unit tests and mutation runs passed before any of this. Running it live foun
 
 - `contracts/lading.py` the escrow (about 16 KB, safely under the Bradbury deploy limit)
 - `tests/direct/` direct-mode tests
-- `scripts/e2e.mjs` the live end-to-end run, `scripts/e2e-log.json` its machine-readable log
-- `demo/` the artifacts and checksum list the live run uses for the drift and stale scenarios
+- `scripts/deploy.mjs` deploys the escrow with a testnet wallet kept outside the repo
+- `scripts/e2e.mjs` the live end-to-end run; `scripts/e2e-log-v3.json` is the audited contract's log, `scripts/e2e-log-main.json` and `scripts/e2e-log-cancel.json` are round 1's
+- `demo/` the artifacts and checksum list the live runs use for the drift, stale, drift-then-stale and app-driven runs
 - `frontend/` the app and landing page (Next.js, wallet-provider client, FINALIZED-aware writes)
 
 ## Running the app
