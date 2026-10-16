@@ -50,7 +50,7 @@ Deployed on **GenLayer Bradbury Testnet** (chain ID 4221):
 
 - **Escrow:** [`0xd325abD9d0cAE02594Ec7dEe53091CCa2356983e`](https://explorer-bradbury.genlayer.com/address/0xd325abD9d0cAE02594Ec7dEe53091CCa2356983e) (the audited contract; the first deployment, [`0xacc591981a7F4B059aE9E5C9a4Cd79aC7fe56A45`](https://explorer-bradbury.genlayer.com/address/0xacc591981a7F4B059aE9E5C9a4Cd79aC7fe56A45), is superseded and kept only for the round 1 evidence below)
 - **Verifier (Lineage v2):** [`0x6508856DE231e094BfD121Eb5A30D5C3c03972A9`](https://explorer-bradbury.genlayer.com/address/0x6508856DE231e094BfD121Eb5A30D5C3c03972A9)
-- **App and landing page:** https://lading-frontend.vercel.app (try [a settled delivery](https://lading-frontend.vercel.app/app/d/lad-ui-1))
+- **App and landing page:** https://lading-frontend.vercel.app (try [a settled delivery](https://lading-frontend.vercel.app/app/d/lad-mvb2wtva-happy))
 
 ## Security model
 
