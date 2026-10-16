@@ -1,6 +1,7 @@
 /** Mirrors the constants and input rules in contracts/lading.py; a test fails if they drift apart. */
 export const MIN_WINDOW = 3600;
 export const MAX_WINDOW = 7 * 86400;
+export const MAX_AHEAD = 730 * 86400;
 export const MIN_STALE = 7200;
 export const MAX_STALE = 30 * 86400;
 export const MAX_URL = 300;
@@ -20,7 +21,8 @@ export function normalizeUrl(u: string): string {
  */
 export function urlProblem(u: string): string | null {
   if (!u.startsWith("https://") || u.length > MAX_URL) return `The URL must start with https:// and be at most ${MAX_URL} characters.`;
-  if (/[\s"'<>\\`|]/.test(u)) return "The URL has a character the contract refuses.";
+  // \s plus the separators Python's str.isspace() adds (U+001C to U+001F, U+0085): stricter is safe, looser would strand funds.
+  if (/[\s\u001c-\u001f\u0085"'<>\\`|]/.test(u)) return "The URL has a character the contract refuses.";
   const host = u.slice(8).split("/")[0].split("?")[0].split("#")[0].toLowerCase();
   if (host.includes("@") || host.includes(":")) return "The URL may not contain credentials or a port.";
   const parts = host.split(".");
@@ -64,6 +66,7 @@ export function pinProblem(pin: string, list: string): string | null {
 export function timesProblem(deadline: number, window: number, stale: number, now: number): string | null {
   if (!Number.isInteger(deadline) || !Number.isInteger(window) || !Number.isInteger(stale)) return "Times must be whole numbers.";
   if (deadline <= now) return "The ship-by time must be in the future.";
+  if (deadline > now + MAX_AHEAD) return "The ship-by time must be within two years.";
   if (window < MIN_WINDOW || window > MAX_WINDOW) return `The watch window must be ${MIN_WINDOW / 3600} hour to ${MAX_WINDOW / 86400} days.`;
   if (stale < MIN_STALE || stale > MAX_STALE) return `Stuck-case recovery must be ${MIN_STALE / 3600} hours to ${MAX_STALE / 86400} days.`;
   return null;

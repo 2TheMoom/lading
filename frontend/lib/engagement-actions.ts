@@ -50,7 +50,7 @@ export function windowOpen(e: Engagement, now: number): boolean {
  *  - refund_drift: anyone, while verified (the contract refuses unless the verifier no longer vouches)
  *  - settle: anyone, once an outcome is recorded
  *  - reclaim_timeout: client only; an unaccepted proposal any time, an accepted one after the deadline
- *  - reclaim_stale: client for a stuck submission, anyone for a verified release that was never confirmed
+ *  - reclaim_stale: client for a stuck submission (refunds at once), anyone for a verified release that was never confirmed (records an even split; settle pays it)
  */
 export function availableActions(e: Engagement, ctx: ActionContext): EngagementAction[] {
   const actions: EngagementAction[] = [];
@@ -88,7 +88,7 @@ const MIN_RANK: Record<string, number> = {
 const NEEDS_OUTCOME: Record<string, string[]> = { release: ["provider"], refund_drift: ["client"], reclaim_timeout: ["client"], reclaim_stale: ["client", "split"] };
 
 /** Status (and outcome) the engagement must reach for a write to count as recorded: read back after every transaction. */
-export function expectedStatus(action: EngagementAction | "create"): (e: Engagement) => boolean {
+export function expectedStatus(action: EngagementAction | "create", kind?: StaleKind): (e: Engagement) => boolean {
   switch (action) {
     case "create": return (e) => e.status === "proposed";
     case "accept": return (e) => e.status === "funded";
@@ -98,7 +98,10 @@ export function expectedStatus(action: EngagementAction | "create"): (e: Engagem
     case "refund_drift": return (e) => e.status === "decided" && e.outcome === "client";
     case "settle": return (e) => e.status === "settled";
     case "reclaim_timeout": return (e) => e.status === "settled" && e.outcome === "client";
-    case "reclaim_stale": return (e) => e.status === "settled" && (e.outcome === "client" || e.outcome === "split");
+    case "reclaim_stale":
+      if (kind === "verified") return (e) => (e.status === "decided" || e.status === "settled") && e.outcome === "split";
+      if (kind === "submitted") return (e) => e.status === "settled" && e.outcome === "client";
+      return (e) => (e.status === "settled" && e.outcome === "client") || ((e.status === "decided" || e.status === "settled") && e.outcome === "split");
     default: return () => true;
   }
 }
@@ -107,17 +110,30 @@ export function expectedStatus(action: EngagementAction | "create"): (e: Engagem
  * What a FINALIZED write must still show when the engagement is read again: at least as far along as the write made it
  * (someone else's later step is fine), and the outcome it recorded where it recorded one.
  */
-export function finalStatus(action: EngagementAction | "create"): (e: Engagement) => boolean {
+export function finalStatus(action: EngagementAction | "create", kind?: StaleKind): (e: Engagement) => boolean {
   return (e) => {
-    if ((RANK[e.status] ?? -1) < (MIN_RANK[action] ?? 99)) return false;
-    const need = NEEDS_OUTCOME[action];
+    // a verified release's stale recovery only records the split (decided); a stuck submission's refund pays at once (settled)
+    const min = action === "reclaim_stale" && kind === "verified" ? 4 : MIN_RANK[action] ?? 99;
+    if ((RANK[e.status] ?? -1) < min) return false;
+    const need = action === "reclaim_stale" && kind ? [kind === "verified" ? "split" : "client"] : NEEDS_OUTCOME[action];
     return !need || need.includes(e.outcome);
   };
 }
 
-/** True for actions that move funds: the transfer only lands when the transaction finalizes. */
-export function movesFunds(action: EngagementAction | "create"): boolean {
-  return action === "settle" || action === "reclaim_timeout" || action === "reclaim_stale";
+/** True for actions that move funds: the transfer only lands when the transaction finalizes. A stale split only records; settle pays it. */
+export function movesFunds(action: EngagementAction | "create", kind?: StaleKind): boolean {
+  return action === "settle" || action === "reclaim_timeout" || (action === "reclaim_stale" && kind !== "verified");
+}
+
+/**
+ * Why the contract would refuse a stale split right now, judged from the verifier's latest record (the contract judges its finalized
+ * state, so this can run slightly ahead of it): a drift means refund_drift applies, a fresh check on every link means release applies.
+ */
+export function staleSplitBlocker(e: Engagement, chain: ChainLink[], now: number): string | null {
+  if (staleKind(e, now) !== "verified" || chain.length === 0) return null;
+  if (driftedLinks(chain).length > 0) return "A file changed: the refund applies instead.";
+  if (linksNeedingCheck(chain, Number(e.window_end)).length === 0) return "Every link was checked after the window: the release applies instead.";
+  return null;
 }
 
 /** Links of the chain that still need a check recorded after the window closed (release refuses until every link has one). */

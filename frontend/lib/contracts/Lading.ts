@@ -2,8 +2,8 @@ import { createClient } from "genlayer-js";
 import { getGenLayerChain } from "../genlayer/chains";
 import type { Attestation, ChainLink, Engagement } from "./types";
 import { decodeAttestation, decodeChain, decodeEngagement } from "./decode";
-import { failedReceiptMessage } from "../receipt";
-import { expectedStatus, finalStatus, movesFunds, type EngagementAction } from "../engagement-actions";
+import { failedReceiptMessage, isContractRefusal } from "../receipt";
+import { expectedStatus, finalStatus, movesFunds, type EngagementAction, type StaleKind } from "../engagement-actions";
 
 /** Where a write is in its life. The UI shows these; only "finalized" means it is really done. */
 export type WriteStage = "signing" | "submitted" | "accepted" | "confirmed" | "finalized" | "failed";
@@ -15,6 +15,8 @@ export interface WriteProgress {
   movesFunds: boolean;
   /** why a write failed, set with stage "failed" */
   message?: string;
+  /** which contract this transaction went to: funding an escrow also registers the release with the verifier first */
+  target?: "escrow" | "verifier";
 }
 
 export interface CreateArgs {
@@ -106,8 +108,9 @@ class Lading {
   async getEngagement(id: string): Promise<Engagement | null> {
     try {
       return decodeEngagement(await this.readClient.readContract({ address: this.escrow, functionName: "get_engagement", args: [id] }));
-    } catch {
-      return null;
+    } catch (error) {
+      if (isContractRefusal(error)) return null;
+      throw error;
     }
   }
 
@@ -139,8 +142,9 @@ class Lading {
   async getAttestation(id: string): Promise<Attestation | null> {
     try {
       return decodeAttestation(await this.readClient.readContract({ address: this.verifier, functionName: "get_attestation", args: [id] }));
-    } catch {
-      return null;
+    } catch (error) {
+      if (isContractRefusal(error)) return null;
+      throw error;
     }
   }
 
@@ -148,8 +152,9 @@ class Lading {
   async getChain(id: string): Promise<ChainLink[]> {
     try {
       return decodeChain(await this.readClient.readContract({ address: this.verifier, functionName: "trace", args: [id] }));
-    } catch {
-      return [];
+    } catch (error) {
+      if (isContractRefusal(error)) return [];
+      throw error;
     }
   }
 
@@ -165,7 +170,7 @@ class Lading {
   }
 
   private async submitWrite(spec: WriteSpec): Promise<string> {
-    const progress = (stage: WriteStage, txHash?: string, message?: string) => spec.onProgress?.({ stage, txHash, movesFunds: spec.funds, message });
+    const progress = (stage: WriteStage, txHash?: string, message?: string) => spec.onProgress?.({ stage, txHash, movesFunds: spec.funds, message, target: spec.target });
     const client = await this.writer();
     const address = spec.target === "escrow" ? this.escrow : this.verifier;
 
@@ -233,11 +238,11 @@ class Lading {
 
   // ---- escrow writes --------------------------------------------------------------------------
 
-  private escrowWrite(action: EngagementAction | "create", id: string, fn: string, args: unknown[], onProgress?: (p: WriteProgress) => void, value?: bigint) {
-    const ok = expectedStatus(action);
-    const fin = finalStatus(action);
+  private escrowWrite(action: EngagementAction | "create", id: string, fn: string, args: unknown[], onProgress?: (p: WriteProgress) => void, value?: bigint, kind?: StaleKind) {
+    const ok = expectedStatus(action, kind);
+    const fin = finalStatus(action, kind);
     return this.submitWrite({
-      target: "escrow", fn, args, value, funds: movesFunds(action), onProgress,
+      target: "escrow", fn, args, value, funds: movesFunds(action, kind), onProgress,
       confirm: async () => { const e = await this.getEngagement(id); return !!e && ok(e); },
       finalConfirm: async () => { const e = await this.getEngagement(id); return !!e && fin(e); },
     });
@@ -282,8 +287,9 @@ class Lading {
     return this.escrowWrite("reclaim_timeout", id, "reclaim_timeout", [id], onProgress);
   }
 
-  reclaimStale(id: string, onProgress?: (p: WriteProgress) => void) {
-    return this.escrowWrite("reclaim_stale", id, "reclaim_stale", [id], onProgress);
+  /** A stuck submission refunds the client at once; a verified release nobody confirmed only records an even split (settle pays it). */
+  reclaimStale(id: string, kind: StaleKind, onProgress?: (p: WriteProgress) => void) {
+    return this.escrowWrite("reclaim_stale", id, "reclaim_stale", [id], onProgress, undefined, kind);
   }
 
   // ---- verifier writes ------------------------------------------------------------------------

@@ -22,3 +22,11 @@ export function failedReceiptMessage(receipt: any, functionName: string, txHash:
   }
   return null;
 }
+
+/**
+ * A read the contract itself refused (for example "Engagement not found") versus one that never got an answer (RPC down, timeout).
+ * Only the first means "there is nothing here"; the second must surface as an error so a dropped request never reads as "no such delivery".
+ */
+export function isContractRefusal(error: unknown): boolean {
+  return /execution failed/i.test(String((error as any)?.message ?? error ?? ""));
+}

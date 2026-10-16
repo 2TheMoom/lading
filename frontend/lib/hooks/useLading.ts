@@ -8,6 +8,7 @@ import { useWallet } from "../genlayer/wallet";
 import { success, error, info, configError } from "../utils/toast";
 import { addPendingWrite, settlePendingWrite } from "../finality-store";
 import type { Attestation, ChainLink, Engagement } from "../contracts/types";
+import type { StaleKind } from "../engagement-actions";
 
 export type { WriteProgress };
 
@@ -100,6 +101,8 @@ type Runner<TArgs> = (contract: Lading, args: TArgs, onProgress: (p: WriteProgre
 interface Messages {
   recorded: { title: string; description: string };
   final?: { title: string; description: string };
+  /** what to say about a transaction that went to the verifier, not the escrow (for example the release registration before funding) */
+  verifier?: { title: string; description: string };
 }
 
 function useWriteAction<TArgs>(action: Runner<TArgs>, messages: Messages, errorTitle: string, getSubject: (args: TArgs) => string) {
@@ -126,16 +129,21 @@ function useWriteAction<TArgs>(action: Runner<TArgs>, messages: Messages, errorT
       const subject = getSubject(args);
       return action(contract, args, (p) => {
         setProgress({ ...p, at: Date.now() });
-        if (p.stage === "confirmed" && p.txHash) addPendingWrite(subject, { label: messages.recorded.title, txHash: p.txHash, since: Date.now() });
+        // a transaction to the verifier must never be reported in the escrow's words ("Escrow funded" before any money moved)
+        const say = p.target === "verifier" && messages.verifier ? messages.verifier : messages.recorded;
+        const isVerifierStep = say !== messages.recorded;
+        if (p.stage === "confirmed" && p.txHash) addPendingWrite(subject, { label: say.title, txHash: p.txHash, since: Date.now() });
         if (p.stage === "finalized" && p.txHash) {
           settlePendingWrite(subject, p.txHash);
           refresh(subject);
-          const done = messages.final ?? { title: `${messages.recorded.title}, final`, description: "The transaction finalized with a successful result and the state shows it." };
+          const done = isVerifierStep
+            ? { title: `${say.title}, final`, description: "The transaction finalized with a successful result and the state shows it." }
+            : messages.final ?? { title: `${messages.recorded.title}, final`, description: "The transaction finalized with a successful result and the state shows it." };
           success(done.title, { description: done.description });
         } else if (p.stage === "failed" && p.txHash) {
           settlePendingWrite(subject, p.txHash, p.message || "Did not finalize as expected.");
           refresh(subject);
-          error(`${messages.recorded.title}: not final`, { description: p.message || "The transaction did not finalize as expected." });
+          error(`${say.title}: not final`, { description: p.message || "The transaction did not finalize as expected." });
         }
       });
     },
@@ -175,7 +183,10 @@ export function useCreateEscrow() {
       if (!(await c.getAttestation(attId))) await c.attest(a.artifact, a.list, a.name, a.parent, attId, onProgress);
       return c.createEngagement(a, onProgress);
     },
-    { recorded: { title: "Escrow funded", description: "The money is held. The provider must accept the exact terms before work starts." } },
+    {
+      recorded: { title: "Escrow funded", description: "The money is held. The provider must accept the exact terms before work starts." },
+      verifier: { title: "Release registered with the verifier", description: "No money has moved yet. The escrow is funded in the next transaction." },
+    },
     "Failed to create the escrow",
     (a) => a.id
   );
@@ -251,11 +262,11 @@ export function useReclaimTimeout() {
 }
 
 export function useReclaimStale() {
-  return useWriteAction<{ id: string }>(
-    (c, a, onProgress) => c.reclaimStale(a.id, onProgress),
+  return useWriteAction<{ id: string; kind: StaleKind }>(
+    (c, a, onProgress) => c.reclaimStale(a.id, a.kind, onProgress),
     {
-      recorded: { title: "Recovery recorded", description: PAYS },
-      final: { title: "Recovered", description: "The transaction finalized and the funds were delivered." },
+      recorded: { title: "Recovery recorded", description: "Recorded. A stuck submission refunds the client once this finalizes; a split is paid by Settle." },
+      final: { title: "Recovered", description: "The transaction finalized. If it recorded a split, Settle now pays it." },
     },
     "Failed to recover the engagement",
     (a) => a.id

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "node:crypto";
-import { lookup } from "node:dns/promises";
+import { lookup as dnsLookup } from "node:dns";
+import { request } from "node:https";
 import { isIP } from "node:net";
 import { nameProblem, normalizeUrl, urlProblem } from "@/lib/limits";
 
@@ -47,7 +48,7 @@ function privateAddress(ip: string): boolean {
  * The URLs the contract stores follow the contract's rules (checked on entry). A redirect target is not stored, so it
  * only has to be a plain https address on a public host: release downloads redirect to long signed URLs.
  */
-async function assertPublic(url: string, entry: boolean): Promise<void> {
+function assertPublic(url: string, entry: boolean): void {
   if (entry) {
     const bad = urlProblem(url);
     if (bad) throw new Error(bad);
@@ -55,8 +56,19 @@ async function assertPublic(url: string, entry: boolean): Promise<void> {
   const u = new URL(url);
   if (u.protocol !== "https:" || u.port || u.username || u.password) throw new Error("Only plain https addresses are followed.");
   if (isIP(u.hostname.replace(/^\[|\]$/g, "")) !== 0) throw new Error("An address, not a domain name, was given.");
-  const addrs = await lookup(u.hostname, { all: true });
-  if (addrs.length === 0 || addrs.some((a) => privateAddress(a.address))) throw new Error("The host does not resolve to a public address.");
+}
+
+/**
+ * Resolves the host and refuses non-public answers AT CONNECT TIME. Resolving once to check and again to connect would let a
+ * hostile DNS server answer "public" for the check and "internal" for the connection (DNS rebinding).
+ */
+function publicLookup(hostname: string, options: any, cb: any): void {
+  dnsLookup(hostname, { all: true }, (err, addrs) => {
+    if (err) return cb(err);
+    if (!addrs || addrs.length === 0 || addrs.some((a) => privateAddress(a.address))) return cb(new Error("The host does not resolve to a public address."));
+    if (options?.all) return cb(null, addrs);
+    cb(null, addrs[0].address, addrs[0].family);
+  });
 }
 
 interface Fetched {
@@ -68,35 +80,54 @@ interface Fetched {
   text: string;
 }
 
-/** Download up to maxBytes, following redirects by hand so every hop is validated. */
+/** One GET, no redirects, no compression, address checked at connect time. Resolves with the status, location and a body reader. */
+function get(url: string): Promise<{ status: number; location: string; res: import("node:http").IncomingMessage }> {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const req = request(
+      { protocol: "https:", hostname: u.hostname, path: u.pathname + u.search, method: "GET", headers: { ...HEADERS, "Accept-Encoding": "identity" }, lookup: publicLookup, timeout: TIMEOUT_MS },
+      (res) => resolve({ status: res.statusCode ?? 0, location: String(res.headers.location ?? ""), res })
+    );
+    req.on("timeout", () => req.destroy(new Error("The host took too long to answer.")));
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+/** Download up to maxBytes, following redirects by hand so every hop is validated and connected to only if public. */
 async function fetchLimited(start: string, maxBytes: number, wantText: boolean): Promise<Fetched> {
   let url = start;
+  const deadline = Date.now() + TIMEOUT_MS;
   for (let hop = 0; hop <= MAX_HOPS; hop++) {
-    await assertPublic(url, hop === 0);
-    const res = await fetch(url, { method: "GET", headers: HEADERS, redirect: "manual", signal: AbortSignal.timeout(TIMEOUT_MS) });
-    if (res.status >= 300 && res.status < 400) {
-      const loc = res.headers.get("location");
-      if (!loc) throw new Error("A redirect had no destination.");
-      url = new URL(loc, url).toString();
+    assertPublic(url, hop === 0);
+    const { status, location, res } = await get(url);
+    if (status >= 300 && status < 400) {
+      res.resume();
+      if (!location) throw new Error("A redirect had no destination.");
+      url = new URL(location, url).toString();
       continue;
     }
-    if (res.status !== 200 || !res.body) return { ok: false, status: res.status, size: 0, tooLarge: false, digest: "", text: "" };
+    if (status !== 200) {
+      res.destroy();
+      return { ok: false, status, size: 0, tooLarge: false, digest: "", text: "" };
+    }
     const hash = createHash("sha256");
-    const chunks: Uint8Array[] = [];
+    const chunks: Buffer[] = [];
     let size = 0;
-    const reader = res.body.getReader();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.length;
+    for await (const chunk of res as AsyncIterable<Buffer>) {
+      if (Date.now() > deadline) {
+        res.destroy();
+        throw new Error("The download took too long.");
+      }
+      size += chunk.length;
       if (size > maxBytes) {
-        await reader.cancel();
+        res.destroy();
         return { ok: true, status: 200, size, tooLarge: true, digest: "", text: "" };
       }
-      hash.update(value);
-      if (wantText) chunks.push(value);
+      hash.update(chunk);
+      if (wantText) chunks.push(chunk);
     }
-    const text = wantText ? Buffer.concat(chunks.map((c) => Buffer.from(c))).toString("utf8") : "";
+    const text = wantText ? Buffer.concat(chunks).toString("utf8") : "";
     return { ok: size > 0, status: 200, size, tooLarge: false, digest: size > 0 ? hash.digest("hex") : "", text };
   }
   throw new Error("Too many redirects.");
@@ -154,10 +185,10 @@ export async function POST(req: NextRequest) {
   const items: { artifact: string; name: string }[] = Array.isArray(body?.items) ? body.items.slice(0, 3) : [];
   if (!list || items.length === 0) return NextResponse.json({ error: "Give a list and at least one item." }, { status: 400 });
   for (const it of items) {
-    const bad = urlProblem(normalizeUrl(String(it?.artifact ?? ""))) || nameProblem(String(it?.name ?? ""));
+    const bad = urlProblem(String(it?.artifact ?? "")) || nameProblem(String(it?.name ?? ""));
     if (bad) return NextResponse.json({ error: bad }, { status: 400 });
   }
-  const listBad = urlProblem(list);
+  const listBad = urlProblem(String(body.list));
   if (listBad) return NextResponse.json({ error: listBad }, { status: 400 });
 
   let listed: Fetched;

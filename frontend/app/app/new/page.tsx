@@ -81,15 +81,15 @@ export default function NewEscrow() {
     if (f.id && (f.id.length < 1 || f.id.length > 64)) p.push("The escrow ID must be 1 to 64 characters.");
     if (f.provider && !/^0x[0-9a-fA-F]{40}$/.test(f.provider)) p.push("The provider must be a 0x wallet address.");
     if (f.provider && address && f.provider.toLowerCase() === address.toLowerCase()) p.push("The provider cannot be your own wallet.");
-    if (f.artifact) { const x = urlProblem(artifact); if (x) p.push(`Artifact: ${x}`); }
-    if (f.list) { const x = urlProblem(list); if (x) p.push(`Checksum list: ${x}`); }
+    if (f.artifact) { const x = urlProblem(f.artifact); if (x) p.push(`Artifact: ${x}`); }
+    if (f.list) { const x = urlProblem(f.list); if (x) p.push(`Checksum list: ${x}`); }
     if (f.name) { const x = nameProblem(f.name); if (x) p.push(x); }
     if (f.pin && f.list) { const x = pinProblem(f.pin, f.list); if (x) p.push(x); }
     if (f.expected) { const x = digestProblem(f.expected); if (x) p.push(x); }
     if (hasSource) {
       if (!f.srcArtifact || !f.srcName) p.push("Give both the source URL and its filename in the list, or neither.");
       else {
-        const x = urlProblem(srcArtifact) || nameProblem(f.srcName);
+        const x = urlProblem(f.srcArtifact) || nameProblem(f.srcName);
         if (x) p.push(`Source: ${x}`);
       }
     }
@@ -104,7 +104,7 @@ export default function NewEscrow() {
   // preflight: really download and hash the file(s) before any money is sent
   const [pre, setPre] = useState<{ state: "idle" | "loading" | "done" | "error"; list?: { readable: boolean; note: string }; items?: PreflightItem[]; error?: string }>({ state: "idle" });
   useEffect(() => {
-    const urlsOk = f.artifact && f.list && f.name && !urlProblem(artifact) && !urlProblem(list) && !nameProblem(f.name) && (!hasSource || (srcArtifact && f.srcName && !urlProblem(srcArtifact) && !nameProblem(f.srcName)));
+    const urlsOk = f.artifact && f.list && f.name && !urlProblem(f.artifact) && !urlProblem(f.list) && !nameProblem(f.name) && (!hasSource || (srcArtifact && f.srcName && !urlProblem(f.srcArtifact) && !nameProblem(f.srcName)));
     if (!urlsOk) { setPre({ state: "idle" }); return; }
     setPre({ state: "loading" });
     const ctl = new AbortController();
@@ -176,10 +176,10 @@ export default function NewEscrow() {
                 <div style={{ flex: "2 1 300px", minWidth: 0 }}><Field id="f-prov" label="Provider address"><input id="f-prov" className="l-input" value={f.provider} onChange={set("provider")} placeholder="0x…" /></Field></div>
               </div>
               <Field id="f-art" label="Artifact URL" hint="The file validators download and hash. Use a URL that never changes, such as a release asset.">
-                <input id="f-art" className={inputCls(!!f.artifact && !!urlProblem(artifact))} value={f.artifact} onChange={set("artifact")} placeholder="https://github.com/…/releases/download/…/app-linux-amd64" />
+                <input id="f-art" className={inputCls(!!f.artifact && !!urlProblem(f.artifact))} value={f.artifact} onChange={set("artifact")} placeholder="https://github.com/…/releases/download/…/app-linux-amd64" />
               </Field>
               <Field id="f-list" label="Publisher's checksum list" hint="Plain sha256sum format: a 64 character digest, then the filename.">
-                <input id="f-list" className={inputCls(!!f.list && !!urlProblem(list))} value={f.list} onChange={set("list")} placeholder="https://github.com/…/releases/download/…/sha256sum.txt" />
+                <input id="f-list" className={inputCls(!!f.list && !!urlProblem(f.list))} value={f.list} onChange={set("list")} placeholder="https://github.com/…/releases/download/…/sha256sum.txt" />
               </Field>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 20 }}>
                 <div style={{ flex: "1 1 240px", minWidth: 0 }}><Field id="f-name" label="Filename in the list"><input id="f-name" className={inputCls(!!f.name && !!nameProblem(f.name))} value={f.name} onChange={set("name")} placeholder="app-linux-amd64" /></Field></div>

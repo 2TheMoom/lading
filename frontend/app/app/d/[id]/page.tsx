@@ -12,7 +12,7 @@ import {
   useAccept, useAttestation, useChain, useEngagement, useReclaimStale, useReclaimTimeout, useRecheck, useRefundDrift,
   useRelease, useSettle, useSubmit, useVerify,
 } from "@/lib/hooks/useLading";
-import { availableActions, driftedLinks, linksNeedingCheck, releaseBlocker, staleKind, windowOpen, type EngagementAction } from "@/lib/engagement-actions";
+import { availableActions, driftedLinks, linksNeedingCheck, releaseBlocker, staleKind, staleSplitBlocker, windowOpen, type EngagementAction } from "@/lib/engagement-actions";
 import { formatGen, short } from "@/lib/limits";
 import { statusWords } from "@/lib/status";
 import type { ChainLink, Engagement } from "@/lib/contracts/types";
@@ -72,7 +72,7 @@ export default function Delivery() {
   const id = decodeURIComponent(String(params?.id ?? ""));
   const { address } = useWallet();
   const now = useNow();
-  const { data: e, isLoading } = useEngagement(id);
+  const { data: e, isLoading, error: readError, refetch } = useEngagement(id);
   const { data: chain = [] } = useChain(e?.attestation_id);
   const { data: att } = useAttestation(e?.attestation_id);
   const pending = usePendingWrites(id);
@@ -88,12 +88,14 @@ export default function Delivery() {
   const recheck = useRecheck();
 
   if (isLoading) return <div><AppBar active="deliveries" /><main className="l-wrap" style={{ paddingBlock: 48 }}><p className="l-note">Reading the contract…</p></main></div>;
+  if (!e && readError) return <div><AppBar active="deliveries" /><main className="l-wrap" style={{ paddingBlock: 48 }}><p>The contract could not be read just now, so nothing is known about <span className="l-mono">{id}</span> yet. <button type="button" className="l-btn small ghost" onClick={() => refetch()}>Try again</button></p></main></div>;
   if (!e) return <div><AppBar active="deliveries" /><main className="l-wrap" style={{ paddingBlock: 48 }}><p>No delivery called <span className="l-mono">{id}</span>. <Link href="/app" style={{ textDecoration: "underline" }}>Back to deliveries</Link></p></main></div>;
 
   const actions = availableActions(e, { address, now });
   const end = Number(e.window_end);
   const blocker = releaseBlocker(e, chain, now);
   const drift = driftedLinks(chain);
+  const staleBlock = staleSplitBlocker(e, chain, now);
   const verifierSays = att?.status ?? "pending";
   const unlinked = chain.length === 0;
   // root first: a build can only be checked once its source is verified
@@ -228,9 +230,9 @@ export default function Delivery() {
                 {row("verify", "Verify now", () => verify.run({ id }), verify.isPending, { note: "Needs the verifier's verdict to have finalized." })}
                 {row("release", "Record the release", () => release.run({ id }), release.isPending, { blocked: !!blocker, note: blocker ?? "Records the outcome. Settle pays it." })}
                 {row("refund_drift", "Record a refund, a file changed", () => refund.run({ id }), refund.isPending, { danger: true, blocked: drift.length === 0, note: drift.length === 0 ? "Unlocks when a link no longer checks out." : undefined })}
-                {row("settle", e.outcome === "provider" ? "Settle: pay the provider" : "Settle: refund the client", () => settle.run({ id }), settle.isPending, { note: "Pays once. The money moves when this finalizes." })}
+                {row("settle", e.outcome === "provider" ? "Settle: pay the provider" : e.outcome === "split" ? "Settle: split evenly" : "Settle: refund the client", () => settle.run({ id }), settle.isPending, { note: "Pays once. The money moves when this finalizes." })}
                 {row("reclaim_timeout", e.status === "proposed" ? "Cancel and reclaim" : "Reclaim the escrow", () => reclaimT.run({ id }), reclaimT.isPending, { danger: true })}
-                {row("reclaim_stale", staleKind(e, now) === "verified" ? "Recover: split evenly" : "Recover the stuck submission", () => reclaimS.run({ id }), reclaimS.isPending, { danger: true, note: staleKind(e, now) === "verified" ? "Nobody could confirm it after the window. It splits evenly." : "The release was never verified. This refunds the client." })}
+                {row("reclaim_stale", staleKind(e, now) === "verified" ? "Record an even split" : "Recover the stuck submission", () => reclaimS.run({ id, kind: staleKind(e, now) ?? "submitted" }), reclaimS.isPending, { danger: true, blocked: !!staleBlock, note: staleBlock ?? (staleKind(e, now) === "verified" ? "Nobody could confirm it after the window. This records an even split; Settle then pays it." : "The release was never verified. This refunds the client.") })}
                 {actions.length === 0 && toCheck.length === 0 && connected && <p className="l-note" style={{ margin: 0 }}>Nothing for you to do right now.</p>}
 
                 {[accept, submit, recheck, verify, release, refund, settle, reclaimT, reclaimS].map((h, i) => (h.progress ? <TxProgress key={i} progress={h.progress} pending={h.isPending} /> : null))}

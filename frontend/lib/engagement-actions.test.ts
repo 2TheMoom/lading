@@ -3,9 +3,9 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { decodeAttestation, decodeChain, decodeEngagement } from "./contracts/decode.ts";
 import type { ChainLink, Engagement } from "./contracts/types.ts";
-import { availableActions, driftedLinks, expectedStatus, finalStatus, linksNeedingCheck, movesFunds, releaseBlocker, staleKind, windowOpen } from "./engagement-actions.ts";
-import { failedReceiptMessage } from "./receipt.ts";
-import { MAX_NAME, MAX_STALE, MAX_URL, MAX_WINDOW, MIN_STALE, MIN_WINDOW, NAME_CHARS, digestProblem, formatGen, nameProblem, normalizeUrl, parentProblem, pinProblem, short, timesProblem, urlProblem } from "./limits.ts";
+import { availableActions, driftedLinks, expectedStatus, finalStatus, linksNeedingCheck, movesFunds, releaseBlocker, staleKind, staleSplitBlocker, windowOpen } from "./engagement-actions.ts";
+import { failedReceiptMessage, isContractRefusal } from "./receipt.ts";
+import { MAX_AHEAD, MAX_NAME, MAX_STALE, MAX_URL, MAX_WINDOW, MIN_STALE, MIN_WINDOW, NAME_CHARS, digestProblem, formatGen, nameProblem, normalizeUrl, parentProblem, pinProblem, short, timesProblem, urlProblem } from "./limits.ts";
 
 const CLIENT = "0x1111111111111111111111111111111111111111";
 const PROVIDER = "0x2222222222222222222222222222222222222222";
@@ -39,6 +39,7 @@ describe("limits and rules match the contract", () => {
     assert.equal(MIN_WINDOW, constant("MIN_WINDOW"));
     assert.equal(MAX_WINDOW, constant("MAX_WINDOW"));
     assert.equal(MIN_STALE, constant("MIN_STALE"));
+    assert.equal(MAX_AHEAD, constant("MAX_AHEAD"));
     assert.equal(MAX_STALE, constant("MAX_STALE"));
     assert.equal(MAX_URL, constant("MAX_URL"));
     assert.equal(MAX_NAME, constant("MAX_NAME"));
@@ -56,11 +57,15 @@ describe("limits and rules match the contract", () => {
 describe("validation mirrors the contract", () => {
   it("refuses the urls the contract refuses", () => {
     const bad = ["http://a.com/x", "https://127.0.0.1/x", "https://localhost/x", "https://a.com:8080/x", "https://u:p@a.com/x", "https://printer.local/x", "https://nodots/x",
-      "https://a.com/a|b", "https://a.com/a b", "https://-bad.example.com/x", "https://exa_mple.com/x", "https://a.com/" + "a".repeat(300)];
+      "https://a.com/a|b", "https://a.com/a b", "https://a.com/a\u001cb", "https://a.com/a\u0085b", "https://-bad.example.com/x", "https://exa_mple.com/x", "https://a.com/" + "a".repeat(300)];
     for (const u of bad) assert.ok(urlProblem(u), u);
     for (const u of ["https://raw.githubusercontent.com/o/r/main/SUMS", "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64", "https://DL.Example.COM/x#frag"]) {
       assert.equal(urlProblem(u), null, u);
     }
+  });
+  it("judges the whole pasted URL, fragment included, because the contract checks it before dropping the fragment", () => {
+    for (const u of ["https://a.com/x#has space", "https://a.com/x#a|b", "https://a.com/x#" + "f".repeat(300)]) assert.ok(urlProblem(u), u);
+    assert.equal(urlProblem("https://a.com/x#frag"), null);
   });
   it("drops the fragment like the contract does", () => {
     assert.equal(normalizeUrl("https://a.com/x#frag"), "https://a.com/x");
@@ -89,7 +94,8 @@ describe("validation mirrors the contract", () => {
   });
   it("times", () => {
     assert.equal(timesProblem(T + 10, MIN_WINDOW, MIN_STALE, T), null);
-    for (const [d, w, s] of [[T, MIN_WINDOW, MIN_STALE], [T + 10, MIN_WINDOW - 1, MIN_STALE], [T + 10, MAX_WINDOW + 1, MIN_STALE], [T + 10, MIN_WINDOW, MIN_STALE - 1], [T + 10, MIN_WINDOW, MAX_STALE + 1], [T + 10, 3600.5, MIN_STALE]]) {
+    assert.equal(timesProblem(T + MAX_AHEAD, MIN_WINDOW, MIN_STALE, T), null);
+    for (const [d, w, s] of [[T, MIN_WINDOW, MIN_STALE], [T + 10, MIN_WINDOW - 1, MIN_STALE], [T + 10, MAX_WINDOW + 1, MIN_STALE], [T + 10, MIN_WINDOW, MIN_STALE - 1], [T + 10, MIN_WINDOW, MAX_STALE + 1], [T + 10, 3600.5, MIN_STALE], [T + MAX_AHEAD + 1, MIN_WINDOW, MIN_STALE]]) {
       assert.ok(timesProblem(d, w, s, T), `${d} ${w} ${s}`);
     }
   });
@@ -195,7 +201,13 @@ describe("write confirmation", () => {
     assert.ok(expectedStatus("settle")(engagement({ status: "settled", outcome: "provider" })));
     assert.ok(!expectedStatus("settle")(engagement({ status: "decided", outcome: "provider" })));
     assert.ok(expectedStatus("reclaim_timeout")(engagement({ status: "settled", outcome: "client" })));
-    assert.ok(expectedStatus("reclaim_stale")(engagement({ status: "settled", outcome: "split" })));
+    // a stuck submission refunds at once; a verified release only records the split (settle pays it)
+    assert.ok(expectedStatus("reclaim_stale", "submitted")(engagement({ status: "settled", outcome: "client" })));
+    assert.ok(!expectedStatus("reclaim_stale", "submitted")(engagement({ status: "decided", outcome: "split" })));
+    assert.ok(expectedStatus("reclaim_stale", "verified")(engagement({ status: "decided", outcome: "split" })));
+    assert.ok(expectedStatus("reclaim_stale", "verified")(engagement({ status: "settled", outcome: "split" })));
+    assert.ok(!expectedStatus("reclaim_stale", "verified")(engagement({ status: "verified" })));
+    assert.ok(!expectedStatus("reclaim_stale", "verified")(engagement({ status: "decided", outcome: "client" })));
     assert.ok(!expectedStatus("reclaim_stale")(engagement({ status: "settled", outcome: "provider" })));
   });
   it("after finality the engagement must be at least as far along as the write made it, with the outcome it recorded", () => {
@@ -208,12 +220,43 @@ describe("write confirmation", () => {
     assert.ok(finalStatus("refund_drift")(engagement({ status: "decided", outcome: "client" })));
     assert.ok(!finalStatus("refund_drift")(engagement({ status: "decided", outcome: "provider" })));
     assert.ok(!finalStatus("settle")(engagement({ status: "decided", outcome: "provider" })));
-    assert.ok(finalStatus("reclaim_stale")(engagement({ status: "settled", outcome: "split" })));
+    assert.ok(finalStatus("reclaim_stale", "verified")(engagement({ status: "decided", outcome: "split" })));
+    assert.ok(!finalStatus("reclaim_stale", "verified")(engagement({ status: "verified" })));
+    assert.ok(!finalStatus("reclaim_stale", "verified")(engagement({ status: "decided", outcome: "provider" })));
+    assert.ok(finalStatus("reclaim_stale", "submitted")(engagement({ status: "settled", outcome: "client" })));
+    assert.ok(!finalStatus("reclaim_stale", "submitted")(engagement({ status: "decided", outcome: "client" })));
   });
   it("only actions that pay say funds move on finalization", () => {
-    for (const a of ["settle", "reclaim_timeout", "reclaim_stale"] as const) assert.ok(movesFunds(a), a);
+    for (const a of ["settle", "reclaim_timeout"] as const) assert.ok(movesFunds(a), a);
+    assert.ok(movesFunds("reclaim_stale", "submitted"));
+    assert.ok(!movesFunds("reclaim_stale", "verified"), "a stale split only records; settle pays it");
     // release and refund_drift only record an outcome: no transfer may share their transaction
     for (const a of ["release", "refund_drift", "verify", "accept", "submit", "create"] as const) assert.ok(!movesFunds(a), a);
+  });
+});
+
+describe("reads", () => {
+  it("a contract refusal means nothing is there; a network failure is not that", () => {
+    assert.ok(isContractRefusal(new Error("Missing or invalid parameters.\n\nDetails: execution failed: &genvm.VMResult{Kind:0x1, ...}: genvm execution error")));
+    assert.ok(!isContractRefusal(new Error("An unknown RPC error occurred.\n\nDetails: fetch failed")));
+    assert.ok(!isContractRefusal(new Error("The request timed out.")));
+    assert.ok(!isContractRefusal(undefined));
+  });
+});
+
+describe("stale split blocker", () => {
+  const stale = T + 3 * HOUR;
+  it("is silent before the stale point and for other states", () => {
+    assert.equal(staleSplitBlocker(verified(), [link({ status: "drifted" })], stale - 1), null);
+    assert.equal(staleSplitBlocker(engagement({ status: "submitted", stale_at: String(T) }), [link()], T + 1), null);
+  });
+  it("points at the refund when a link drifted and at the release when every link is fresh", () => {
+    assert.match(staleSplitBlocker(verified(), [link({ status: "drifted", checked_at: String(T + HOUR + 10) })], stale)!, /refund applies/);
+    assert.match(staleSplitBlocker(verified(), [link({ checked_at: String(T + HOUR) })], stale)!, /release applies/);
+  });
+  it("allows the split when a link was not re-checked after the window, or the verifier cannot be read", () => {
+    assert.equal(staleSplitBlocker(verified(), [link({ checked_at: String(T + HOUR - 1) })], stale), null);
+    assert.equal(staleSplitBlocker(verified(), [], stale), null);
   });
 });
 

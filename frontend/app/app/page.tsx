@@ -23,7 +23,7 @@ export default function Deliveries() {
 
         {isLoading && <p className="l-note">Reading the contract…</p>}
         {error && <p className="l-bad">Could not read the contract: {error.message}</p>}
-        {!isLoading && rows.length === 0 && (
+        {!isLoading && !error && rows.length === 0 && (
           <div className="l-panel"><div className="l-panel-body"><p style={{ margin: 0 }}>No deliveries yet. Fund the first escrow against a real release.</p></div></div>
         )}
 
