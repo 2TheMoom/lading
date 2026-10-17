@@ -87,7 +87,7 @@ The threat list was written before the code and each row is tested.
 |---|---|---|
 | Lint | `genvm-lint check contracts/lading.py` | static checks |
 | Direct | `python -m pytest tests/direct/ -v` | 121 in-memory tests with a fake verifier that models the real one and records every call |
-| Frontend logic | `cd frontend && npm test` | 43 tests: action rules, limits mirrored from the contract, decoding, finality rules, read errors |
+| Frontend logic | `cd frontend && npm test` | 53 tests: action rules, limits mirrored from the contract, decoding, finality rules, read errors |
 | Live | `LADING=0x... node scripts/e2e.mjs` | the Bradbury run described below, separate client, provider and third-party wallets |
 
 Every rule was mutation-checked: 118 deliberate breakages of the contract, 114 caught by a test. Four survive. Three are the payout bookkeeping (the amounts-sum check, the duplicate-payout guard and the payout record), which sit behind the status machine: no input can reach them, so they stay as a second line of defense. The fourth is an equivalent mutant (dropping a `read` check that an `ok` check already implies), so no test can tell it apart.
@@ -232,6 +232,41 @@ The new two-step stale recovery was also driven through the app's own buttons ag
 Result, read from the chain afterwards: both transactions above are `FINALIZED` with `FINISHED_WITH_RETURN`, the engagement is `settled` with outcome `split` and reason `stale`, and the two wallets' balances rose by exactly **0.001 GEN each** (`1000000000000000` wei for the client and `1000000000000000` wei for the provider). Neither wallet sent anything else in that time, and the settle was paid for by the third party, so the differences are the payout. The first transaction recorded the split and moved no money; the second paid it, once.
 
 Running the app also found two honesty problems that were fixed in the app (see the audit table): the verifier registration before funding was reported as "Escrow funded", and the settle button said "refund the client" on a split.
+
+### The audited app in a real MetaMask, on the live site
+
+The deployed app (https://lading-frontend.vercel.app) was driven end to end with the real MetaMask extension and two of its accounts, a client (`0x1a87...e5fb`) and a provider (`0x0917...7969`), against the audited escrow. Every transaction below was approved by hand in MetaMask's own window; the page was driven by a browser tool and watched through the console for errors (none appeared in any step) and recorded. The wallet was in a browser with five wallet extensions installed, which is how the first bug below was found.
+
+| Step | Account | What was pressed | Transaction (first 12 hex digits) | Result |
+|---|---|---|---|---|
+| 1 | client | Fund `lad-mm-1` (0.002 GEN, real jq 1.7.1 release with its source, pin on the jq release path) | `0xa02c2f793400` | recorded, then finalized |
+| 2 | provider | Accept these terms | `0x5cbb271bd622` | recorded |
+| 3 | provider | Mark as shipped | `0x22276b237f70` | recorded |
+| 4 | provider | Verify now (2 links vouched for in finalized state) | `0xdb88bf6e6c94` | recorded; watch window of one hour started |
+| 5 | client | Fund `lad-mm-2` (0.002 GEN) | `0x0bcd8883b359` | recorded |
+| 6 | client | Cancel and reclaim `lad-mm-2` | `0xa87c081425d9` | recorded; refund delivered at finality |
+| 7 | client | Ask validators to check 2 files, after the window closed (source) | `0x0a1ded271706` | recorded, finalized |
+| 8 | client | Ask validators to check 2 files (build) | `0xbf452d224c36` | recorded, finalized |
+| 9 | client | Record the release | `0x226d7f7a06dd` | recorded; moves no money |
+| 10 | client | Settle: pay the provider | `0x03fd7db0fa78` | recorded, finalized about 30 minutes later |
+
+(Only the leading digits are shown because the app's pending list, which is where these were read, shortens them. Every transaction is under the escrow's address in the explorer.)
+
+What was checked, from the chain afterwards:
+
+- After the settlement finalized, the provider's balance rose by exactly **0.002 GEN** (`2000000000000000` wei). The client signed the release and the settle, so the provider's wallet paid no gas and the difference is the payout. Before finality it had risen by 0.
+- `lad-mm-1` is `settled` to the provider (reason "checked after the window"), `lad-mm-2` is `settled` to the client (reason "timeout"). The contract's accounting reads `{"balance": 1, "in_flight": 1, "shortfall": 0, "total_received": "16000000000000000", "total_scheduled": "16000000000000000", "unscheduled": 0}`: everything received was scheduled out exactly once, and the only balance is the 1 wei a refused payable call left behind.
+- The app said "recorded, not final yet" under every write and "Finalized, funds delivered" only when the transaction had finalized. A reload in the middle (step 7 and 8) kept those notes and cleared them by itself when the transactions finalized.
+
+#### What the real MetaMask run found
+
+The scripted and shim-driven runs could not have found these. All three are fixed and deployed:
+
+1. **The page froze on "Connecting" with several wallets installed.** The app talked to `window.ethereum`, which is whichever extension claimed it last. Rabby took it, and Rabby and Keplr never answered, so every request hung and MetaMask never saw one. The app now finds MetaMask by the wallet-discovery standard (EIP-6963), no longer uses the GenLayer client library's own connect step (it also reached for `window.ethereum`), and gives a silent wallet 5 seconds before showing "not connected". Commit `30078cd`.
+2. **A reload turned "recorded, not final" into plain "Paid" or "Refunded".** The pending-writes list lived only in the page's memory. It is now kept in the browser's storage, and after a reload each unfinished write is watched until its transaction finalizes or fails. Commit `002117a`. (A simpler idea, comparing the latest state with a finalized read, was tried and dropped: the RPC returned the same state for both reads.)
+3. **The app logged the user out when the wallet reported a dropped connection.** MetaMask's `disconnect` event only means the provider lost its chain connection for a moment, but the app treated it as "the user disconnected" and showed Connect wallet while MetaMask still had both accounts connected. The app now asks the wallet what is true. Commit `2a13bef`.
+
+One thing seen and not changed: the status stamp reads "Refunded" or "Paid" as soon as the result is recorded, and the notes under it carry the "not final" warning. The stamp itself does not say so.
 
 ## Live evidence, round 1: the first deployment (Bradbury)
 
