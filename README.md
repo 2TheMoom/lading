@@ -4,11 +4,34 @@ Escrow that pays when the build matches. A client funds GEN against a software r
 
 The name is the bill of lading, the document that proves goods were delivered as described. The logo is the Plimsoll load line painted on ships to show they are safely loaded.
 
+## The whole payout-driving path is in this repo
+
+Lading is two contracts that run together, and **both are in this repository**. The escrow (`contracts/lading.py`) holds the money and never fetches or hashes anything itself. The verifier (`contracts/lineage.py`) is the contract that does: it fetches the artifact and the publisher's checksum list, hashes the bytes, and gets the validators to agree on the verdict. The escrow pays only on what the verifier has FINALIZED.
+
+| Step of the path | Where it is | What it does |
+|---|---|---|
+| Fetch the artifact and the checksum list | `contracts/lineage.py`, `leader_fn` inside `_read` (lines 136-148), the two `gl.nondet.web.request` calls at lines 138-139 | The leader validator GETs both URLs. An error, a non-200 status, an empty body or an oversized file (artifact over 4,000,000 bytes, list over 500,000) records nothing. |
+| Hash | `contracts/lineage.py` line 146 | `hashlib.sha256` over the exact downloaded bytes. The list is parsed by `_entries` (line 59) and the verdict is decided by `_judge` (line 70): verified, mismatch, unlisted or unbound. |
+| Validator consensus | `contracts/lineage.py`, `validator_fn` (line 150) and `gl.vm.run_nondet_unsafe(leader_fn, validator_fn)` (line 159) | Every other validator repeats the download and the hash on its own and the vote passes only if the kind of verdict, the digest, the listed digest and the size are all identical to the leader's. |
+| Record the verdict | `contracts/lineage.py`, `attest` (line 120) and `check` (line 162) | Stores the digest, the status and when it was checked. A later `check` that no longer matches records `drifted`. |
+| Read the verdict before paying | `contracts/lading.py`, `_seen` (line 122) | The escrow asks the verifier for `trace` and `is_trusted_from` at `LATEST_FINAL` only, and re-checks every answer's shape before it acts. |
+| Pay | `contracts/lading.py`, `release`, `refund_drift`, `reclaim_*`, then `settle` | A decision and its payment are never in the same transaction. |
+| The app | `frontend/lib/contracts/Lading.ts` (lines 307 and 314) and `frontend/app/api/preflight/route.ts` | The app sends `attest` and `check` to the verifier and the escrow calls to the escrow. Its preflight route downloads and hashes the file before Fund is enabled, as a safeguard only: the validators decide. |
+
+**The code in this repo is the code that is deployed.** `node scripts/verify-deployed.mjs` downloads the deployed source of both contracts from Bradbury and compares it with the files here. At the time of writing both are identical, byte for byte (output in `scripts/verify-deployed.txt`):
+
+| Contract | Address | sha256 of the source (the same on chain and in this repo) |
+|---|---|---|
+| Escrow | [`0xd325abD9d0cAE02594Ec7dEe53091CCa2356983e`](https://explorer-bradbury.genlayer.com/address/0xd325abD9d0cAE02594Ec7dEe53091CCa2356983e) | `df2656eab46cac65...3657a5451` |
+| Verifier | [`0x6508856DE231e094BfD121Eb5A30D5C3c03972A9`](https://explorer-bradbury.genlayer.com/address/0x6508856DE231e094BfD121Eb5A30D5C3c03972A9) | `4d4f87374f8ff1ec...fa25b524` |
+
+The verifier started life as a standalone, reusable contract ([Lineage](https://github.com/2TheMoom/lineage), which anything can use for digest attestations with chains of custody). Lading reuses that exact deployment, and its source and its tests are now part of this repository too (59 tests of the verifier itself, and 31 more that run the validators' vote), so the complete path from a URL to a payout can be reviewed here without leaving it.
+
 ## How it works
 
 Two contracts, deliberately separate:
 
-- **Verifier** ([Lineage](https://github.com/2TheMoom/lineage), already deployed and public). It records, per release, the sha256 validators computed and whether the publisher's checksum list agrees, ties a build to its source, and can pin who vouched. It never touches money.
+- **Verifier** (`contracts/lineage.py`, also published on its own as [Lineage](https://github.com/2TheMoom/lineage)). It fetches and hashes the files, gets the validators to agree, records, per release, the sha256 validators computed and whether the publisher's checksum list agrees, ties a build to its source, and can pin who vouched. It never touches money.
 - **Escrow** (`contracts/lading.py`, this repo). It holds the GEN and reads the verifier's **finalized** state. Its verifier address is fixed at deployment: there is no setter.
 
 ```
@@ -87,6 +110,10 @@ The threat list was written before the code and each row is tested.
 |---|---|---|
 | Lint | `genvm-lint check contracts/lading.py` | static checks |
 | Direct | `python -m pytest tests/direct/ -v` | 121 in-memory tests with a fake verifier that models the real one and records every call |
+| Verifier | `python -m pytest tests/direct/test_lineage.py -v` | 59 tests of the verifier itself: the fetch results, unreadable and oversized sources, the checksum list rules, drift, chains of custody and publisher pinning |
+| Validator consensus | `python -m pytest tests/direct/test_lineage_consensus.py -v` | 31 tests that run the validators' vote: a validator that downloads the same bytes accepts, and one that sees different bytes, a different list, an unreadable source, or a leader result with any field altered, forged or of the wrong shape rejects |
+| Verifier mutation | `python scripts/mutate-verifier.py` | breaks the fetch, hash, vote and verdict code 27 ways, one at a time: all 27 are caught |
+| Deployed code | `node scripts/verify-deployed.mjs` | downloads both deployed contracts and compares them with the files in this repo |
 | Frontend logic | `cd frontend && npm test` | 53 tests: action rules, limits mirrored from the contract, decoding, finality rules, read errors |
 | Live | `LADING=0x... node scripts/e2e.mjs` | the Bradbury run described below, separate client, provider and third-party wallets |
 
@@ -425,6 +452,8 @@ The unit tests and mutation runs passed before any of this. Running it live foun
 ## Layout
 
 - `contracts/lading.py` the escrow (about 16 KB, safely under the Bradbury deploy limit)
+- `contracts/lineage.py` the verifier: fetching, hashing and validator consensus (about 12 KB)
+- `tests/direct/test_lineage.py` and `tests/direct/test_lineage_consensus.py` the verifier's tests, including the validators' vote; `scripts/mutate-verifier.py`; `scripts/verify-deployed.mjs` checks both contracts against the chain
 - `tests/direct/` direct-mode tests
 - `scripts/deploy.mjs` deploys the escrow with a testnet wallet kept outside the repo
 - `scripts/e2e.mjs` the live end-to-end run; `scripts/e2e-log-v3.json` is the audited contract's log, `scripts/e2e-log-main.json` and `scripts/e2e-log-cancel.json` are round 1's

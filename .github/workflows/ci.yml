@@ -17,6 +17,7 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements.txt
       - run: genvm-lint check contracts/lading.py
+      - run: genvm-lint check contracts/lineage.py
 
   test-direct:
     name: Direct Mode Tests
