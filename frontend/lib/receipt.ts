@@ -6,11 +6,13 @@
  * recorded at all, and the contract itself can refuse (FINISHED_WITH_ERROR). Returns a plain explanation
  * when the write did NOT take effect, or null when it executed and returned.
  */
+import { txExecName, txStatusName } from "./tx.ts";
+
 const TIMED_OUT = ["LEADER_TIMEOUT", "VALIDATORS_TIMEOUT", "UNDETERMINED", "CANCELED"];
 
 export function failedReceiptMessage(receipt: any, functionName: string, txHash: string): string | null {
-  const status = String(receipt?.statusName ?? "");
-  const exec = String(receipt?.txExecutionResultName ?? "");
+  const status = txStatusName(receipt);
+  const exec = txExecName(receipt);
   if (TIMED_OUT.includes(status) || exec === "NOT_VOTED" || exec === "IDLE") {
     return (
       `Validators did not complete ${functionName} (${status || exec}). Nothing was recorded, so nothing changed, ` +

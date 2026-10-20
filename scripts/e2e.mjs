@@ -1,4 +1,4 @@
-// Live end-to-end run of Lading on Bradbury, with separate client, provider and third-party wallets.
+// Live end-to-end run of Lading on Bradbury (or on Studionet with NETWORK=studionet), with separate client, provider and third-party wallets.
 //   LADING=0x... node scripts/e2e.mjs            runs every scenario, writes scripts/e2e-log.json
 //   ONLY=happy,cancel LADING=0x... node ...    runs just those
 //
@@ -17,8 +17,12 @@
 import { readFileSync, writeFileSync } from "fs";
 import { spawnSync } from "child_process";
 import { createAccount, createClient } from "genlayer-js";
-import { testnetBradbury } from "genlayer-js/chains";
+import { chain } from "./network.mjs";
 
+
+// Bradbury's receipts carry txExecutionResultName and resultName. Studionet's carry result_name and the leader's execution result.
+const execName = (r) => r.txExecutionResultName ?? (r.consensus_data?.leader_receipt?.[0]?.execution_result === "SUCCESS" ? "FINISHED_WITH_RETURN" : "FINISHED_WITH_ERROR");
+const resName = (r) => r.resultName ?? r.result_name;
 const LADING = process.env.LADING || "";
 if (!LADING) {
   console.error("set LADING=<escrow address>");
@@ -43,8 +47,8 @@ const WALLETS = JSON.parse(readFileSync("C:/Users/olumi/.genlayer-test-wallets/w
 const names = ["gl-test-1", "gl-test-2", "gl-test-3"]; // client, provider, third party
 const acct = Object.fromEntries(names.map((n) => [n, createAccount(WALLETS[n].privateKey)]));
 const addr = Object.fromEntries(names.map((n) => [n, WALLETS[n].address]));
-const clients = Object.fromEntries(names.map((n) => [n, createClient({ chain: testnetBradbury, account: acct[n] })]));
-const reader = createClient({ chain: testnetBradbury });
+const clients = Object.fromEntries(names.map((n) => [n, createClient({ chain, account: acct[n] })]));
+const reader = createClient({ chain });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const now = () => Math.floor(Date.now() / 1000);
 const plain = (x) => (x instanceof Map ? Object.fromEntries([...x].map(([k, v]) => [k, plain(v)])) : Array.isArray(x) ? x.map(plain) : typeof x === "bigint" ? x.toString() : x);
@@ -111,8 +115,8 @@ async function send(scn, who, address, fn, args, value) {
       }
     }
     const who2 = address === LADING ? "escrow" : "verifier";
-    log(scn, `${who2}.${fn} ${hash.slice(0, 12)} exec=${r.txExecutionResultName}`, { fn, contract: who2, hash, exec: r.txExecutionResultName });
-    return { hash, exec: r.txExecutionResultName, result: r.resultName };
+    log(scn, `${who2}.${fn} ${hash.slice(0, 12)} exec=${execName(r)}`, { fn, contract: who2, hash, exec: execName(r) });
+    return { hash, exec: execName(r), result: resName(r) };
   });
 }
 const esc = (scn, who, fn, args, value) => send(scn, who, LADING, fn, args, value);
@@ -138,9 +142,9 @@ async function expectRefused(scn, who, fn, args, value, address = LADING) {
         await sleep(15000);
       }
     }
-    const refused = r.txExecutionResultName !== "FINISHED_WITH_RETURN";
+    const refused = execName(r) !== "FINISHED_WITH_RETURN";
     if (refused && value) STRANDED += BigInt(value);
-    log(scn, `${fn} ${hash.slice(0, 12)} exec=${r.txExecutionResultName}: ${refused ? "refused, as it must be" : "UNEXPECTEDLY ACCEPTED"}${refused && value ? ` (its ${value} wei stays in the contract)` : ""}`, { fn, hash, exec: r.txExecutionResultName, refused, strandedWei: refused && value ? String(value) : "0" });
+    log(scn, `${fn} ${hash.slice(0, 12)} exec=${execName(r)}: ${refused ? "refused, as it must be" : "UNEXPECTEDLY ACCEPTED"}${refused && value ? ` (its ${value} wei stays in the contract)` : ""}`, { fn, hash, exec: execName(r), refused, strandedWei: refused && value ? String(value) : "0" });
     if (!refused) throw new Error(`${scn}: ${fn} should have been refused`);
     return { refused: true, hash };
   });

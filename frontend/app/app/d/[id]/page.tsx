@@ -16,6 +16,7 @@ import { availableActions, driftedLinks, linksNeedingCheck, releaseBlocker, stal
 import { formatGen, short } from "@/lib/limits";
 import { statusWords } from "@/lib/status";
 import type { ChainLink, Engagement } from "@/lib/contracts/types";
+import { NETWORK } from "@/lib/genlayer/network";
 
 function useNow(ms = 5000): number {
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
@@ -177,7 +178,7 @@ export default function Delivery() {
                 <Step mark="done" title={`Funded, ${formatGen(e.amount)} GEN`} note="Escrow held by the contract" />
                 <Step mark={e.status === "proposed" ? "now" : "done"} title={e.status === "proposed" ? "Waiting for the provider to accept the exact terms" : "Provider accepted the exact terms"} note={`Terms digest ${short(e.terms_hash, 12, 8)}`} />
                 <Step mark={e.status === "funded" ? "now" : e.status === "proposed" ? "wait" : "done"} title={e.status === "submitted" || ["verified", "decided", "settled"].includes(e.status) ? "Provider marked it shipped" : "Waiting for the provider to ship"} note={`Ship by ${when(e.deadline)}`} />
-                <Step mark={e.status === "submitted" ? "now" : ["verified", "decided", "settled"].includes(e.status) ? "done" : "wait"} title={["verified", "decided", "settled"].includes(e.status) ? "Verified: the digest matches" : "Verification"} note={["verified", "decided", "settled"].includes(e.status) ? `${e.links} link${e.links === "1" ? "" : "s"} vouched for in finalized state` : "Needs a verdict that has finalized, about 30 minutes after the check."} right={["verified", "decided", "settled"].includes(e.status) ? when(e.verified_at) : undefined} />
+                <Step mark={e.status === "submitted" ? "now" : ["verified", "decided", "settled"].includes(e.status) ? "done" : "wait"} title={["verified", "decided", "settled"].includes(e.status) ? "Verified: the digest matches" : "Verification"} note={["verified", "decided", "settled"].includes(e.status) ? `${e.links} link${e.links === "1" ? "" : "s"} vouched for in finalized state` : `Needs a verdict that has finalized, ${NETWORK.finality} after the check.`} right={["verified", "decided", "settled"].includes(e.status) ? when(e.verified_at) : undefined} />
                 <Step mark={e.status === "verified" ? (windowOpen(e, now) ? "now" : "done") : ["decided", "settled"].includes(e.status) ? "done" : "wait"} title="Watch window" note={e.status === "verified" ? (windowOpen(e, now) ? `Closes in ${span(end - now)}. Anyone can re-check the files while it runs.` : "Closed.") : ["decided", "settled"].includes(e.status) ? "Closed." : "Starts when the release is verified."} />
                 <Step mark={e.status === "verified" && now >= end ? (needAfterWindow.length === 0 && drift.length === 0 ? "done" : "now") : ["decided", "settled"].includes(e.status) ? "done" : "wait"} title="Every link checked again after the window" note={blocker ?? (e.status === "verified" ? "All checked. Release can record the outcome." : ["decided", "settled"].includes(e.status) ? "Checked after the window closed, and that check finalized." : "A check made after the window closes, and finalized, is what lets the provider be paid.")} />
                 <Step mark={e.status === "decided" ? "now" : e.status === "settled" ? "done" : "wait"} title={e.status === "decided" || e.status === "settled" ? `Outcome recorded: ${e.outcome === "provider" ? "pay the provider" : e.outcome === "split" ? "split evenly" : "refund the client"}` : "Outcome"} note={e.reason ? `Reason: ${e.reason}` : "Release or refund records it. Moves no money."} />
@@ -187,7 +188,7 @@ export default function Delivery() {
                 <div style={{ padding: "0 24px 20px" }}>
                   {pending.map((w) => (
                     <div key={w.txHash} className="l-note l-pending" style={{ padding: "8px 12px", marginTop: 8, wordBreak: "break-word", color: w.failed ? "var(--red)" : "var(--ink)" }}>
-                      {w.failed ? `✗ ${w.label}: ${w.failed}` : `… ${w.label}: recorded, not final yet. It counts as done once its transaction finalizes (about 30 minutes on Bradbury).`}{" "}
+                      {w.failed ? `✗ ${w.label}: ${w.failed}` : `… ${w.label}: recorded, not final yet. It counts as done once its transaction finalizes (${NETWORK.finality} on ${NETWORK.short}).`}{" "}
                       <a href={getTxExplorerUrl(w.txHash)} target="_blank" rel="noreferrer" style={{ textDecoration: "underline" }}>{w.txHash.slice(0, 14)}…</a>
                     </div>
                   ))}

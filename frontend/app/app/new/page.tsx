@@ -8,6 +8,7 @@ import { useWallet } from "@/lib/genlayer/wallet";
 import { useCreateEscrow, useLadingContract } from "@/lib/hooks/useLading";
 import { digestProblem, formatGen, nameProblem, normalizeUrl, pinProblem, short, timesProblem, urlProblem, MIN_WINDOW, MIN_STALE } from "@/lib/limits";
 import type { PreflightItem } from "@/app/api/preflight/route";
+import { NETWORK } from "@/lib/genlayer/network";
 
 const WINDOWS = [
   { label: "1 hour", seconds: 3600 },
@@ -232,7 +233,7 @@ export default function NewEscrow() {
               </div>
             </div>
 
-            <div className="l-warn"><b>Read before sending</b>Your wallet will send {amountWei > BigInt(0) ? formatGen(amountWei.toString()) : "the amount"} GEN. On Bradbury a request the contract refuses keeps its money, which is why every rule is checked first and the file is downloaded and hashed here before you can fund.</div>
+            <div className="l-warn"><b>Read before sending</b>Your wallet will send {amountWei > BigInt(0) ? formatGen(amountWei.toString()) : "the amount"} GEN. On {NETWORK.short} a request the contract refuses keeps its money, which is why every rule is checked first and the file is downloaded and hashed here before you can fund.</div>
 
             {problems.length > 1 && <div className="l-bad l-note">{problems.slice(1).map((p) => <div key={p}>{p}</div>)}</div>}
 
@@ -241,7 +242,7 @@ export default function NewEscrow() {
                 {create.isPending ? "Working…" : `Fund ${amountWei > BigInt(0) ? formatGen(amountWei.toString()) : ""} GEN`}
               </button>
               {!address && <div className="l-note" style={{ marginTop: 8 }}>Connect a wallet to fund an escrow.</div>}
-              <div className="l-note" style={{ marginTop: 8 }}>It counts as funded once it finalizes, about 30 minutes.</div>
+              <div className="l-note" style={{ marginTop: 8 }}>It counts as funded once it finalizes, {NETWORK.finality}.</div>
               <TxProgress progress={create.progress} pending={create.isPending} />
             </div>
           </div>

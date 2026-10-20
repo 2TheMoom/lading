@@ -1,0 +1,7 @@
+network: studionet (chain id 61999)
+IDENTICAL  Escrow   (contracts/lading.py)  0x85223A7f0C589Bd14Eb2207C618de20c8bE4E157
+           on chain sha256 df2656eab46cac657a7fb6bc66e2236a53bcb71f5aa94b83248731d3657a5451  (16595 chars)
+           in repo  sha256 df2656eab46cac657a7fb6bc66e2236a53bcb71f5aa94b83248731d3657a5451  (16595 chars)
+IDENTICAL  Verifier (contracts/lineage.py)  0xB1c2504851805F3B2c9F4355bf7B78aeFd95738E
+           on chain sha256 4d4f87374f8ff1ec0c7da69a1cbf978024c65c5d1899afcc5c342f6afa25b524  (12271 chars)
+           in repo  sha256 4d4f87374f8ff1ec0c7da69a1cbf978024c65c5d1899afcc5c342f6afa25b524  (12271 chars)

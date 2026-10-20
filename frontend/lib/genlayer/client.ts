@@ -4,9 +4,10 @@ import { createClient } from "genlayer-js";
 import { createWalletClient, custom, type WalletClient } from "viem";
 import { getGenLayerChain } from "./chains";
 import { findMetaMask } from "./provider";
+import { NETWORK } from "./network.ts";
 
 // GenLayer Network Configuration (from environment variables with fallbacks)
-// Defaults target Bradbury testnet, where Lading is deployed.
+// The network (Bradbury or Studionet) comes from NEXT_PUBLIC_GENLAYER_CHAIN_ID, see network.ts.
 //
 // Chain ID is derived from getGenLayerChain() (not parsed independently from
 // the raw env var) so the wallet-network-switching logic below and the
@@ -18,14 +19,14 @@ export const GENLAYER_CHAIN_ID_HEX = `0x${GENLAYER_CHAIN_ID.toString(16).toUpper
 
 export const GENLAYER_NETWORK = {
   chainId: GENLAYER_CHAIN_ID_HEX,
-  chainName: process.env.NEXT_PUBLIC_GENLAYER_CHAIN_NAME || "GenLayer Bradbury Testnet",
+  chainName: process.env.NEXT_PUBLIC_GENLAYER_CHAIN_NAME || NETWORK.chainName,
   nativeCurrency: {
     name: process.env.NEXT_PUBLIC_GENLAYER_SYMBOL || "GEN",
     symbol: process.env.NEXT_PUBLIC_GENLAYER_SYMBOL || "GEN",
     decimals: 18,
   },
-  rpcUrls: [process.env.NEXT_PUBLIC_GENLAYER_RPC_URL || "https://rpc-bradbury.genlayer.com"],
-  blockExplorerUrls: ["https://explorer-bradbury.genlayer.com/"],
+  rpcUrls: [process.env.NEXT_PUBLIC_GENLAYER_RPC_URL || NETWORK.rpc],
+  blockExplorerUrls: [`${NETWORK.explorer}/`],
 };
 
 // Ethereum provider type from window
@@ -44,13 +45,13 @@ declare global {
 
 /**
  * Get the GenLayer RPC URL from environment variables. Defaults to
- * Bradbury's own RPC - Lading is only ever deployed there, so this
- * must stay consistent with getGenLayerChain()'s Bradbury fallback rather
- * than pointing at a different network's endpoint by default.
+ * the RPC of the network the app is built for (see network.ts), so it
+ * stays consistent with getGenLayerChain() rather than pointing at a
+ * different network's endpoint by default.
  */
 export function getStudioUrl(): string {
   return (
-    process.env.NEXT_PUBLIC_GENLAYER_RPC_URL || "https://rpc-bradbury.genlayer.com"
+    process.env.NEXT_PUBLIC_GENLAYER_RPC_URL || NETWORK.rpc
   );
 }
 
@@ -102,7 +103,8 @@ export async function prepareWalletForWrites(provider: EthereumProvider): Promis
   if (parseInt(String(current), 16) !== GENLAYER_CHAIN_ID) await switchToGenLayerNetwork();
   const snaps = await provider.request({ method: "wallet_getSnaps" }).catch(() => ({}));
   const installed = Object.values(snaps ?? {}).some((s: any) => s?.id === GENLAYER_SNAP_ID);
-  if (!installed) await provider.request({ method: "wallet_requestSnaps", params: { [GENLAYER_SNAP_ID]: {} } as any });
+  // genlayer-js's own connect() returns before this step on a Studio network, so Studionet needs no snap.
+  if (!NETWORK.isStudio && !installed) await provider.request({ method: "wallet_requestSnaps", params: { [GENLAYER_SNAP_ID]: {} } as any });
 }
 
 /**

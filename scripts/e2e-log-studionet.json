@@ -1,0 +1,271 @@
+{
+ "escrow": "0x85223A7f0C589Bd14Eb2207C618de20c8bE4E157",
+ "verifier": "0xB1c2504851805F3B2c9F4355bf7B78aeFd95738E",
+ "run": "mvgtt47h",
+ "started": "2026-10-20T15:16:28.754Z",
+ "events": [
+  {
+   "t": "2026-10-20T15:16:33.533Z",
+   "scenario": "happy",
+   "msg": "verifier says jq-1.7.1.tar.gz is verified, digest 478c9ca129fd2e34...",
+   "attestation": "7e48124d0f7dc33cf8ddb67aa3da0a09763f7b310437b21a721a22d88851a948",
+   "digest": "478c9ca129fd2e3443fe27314b455e211e0d8c60bc8ff7df703873deeee580c2"
+  },
+  {
+   "t": "2026-10-20T15:16:36.601Z",
+   "scenario": "cancel",
+   "msg": "create_engagement 0xd9ad26fe2e exec=FINISHED_WITH_ERROR: refused, as it must be (its 1 wei stays in the contract)",
+   "fn": "create_engagement",
+   "hash": "0xd9ad26fe2e9b0beca90d31251ac1858d133bf1e1b5e035d5dca0364af720e88f",
+   "exec": "FINISHED_WITH_ERROR",
+   "refused": true,
+   "strandedWei": "1"
+  },
+  {
+   "t": "2026-10-20T15:16:43.843Z",
+   "scenario": "agreed",
+   "msg": "escrow.create_engagement 0xf9053570c1 exec=FINISHED_WITH_RETURN",
+   "fn": "create_engagement",
+   "contract": "escrow",
+   "hash": "0xf9053570c185bcb69fb35be0b6ce389e6ade9f3db599547013d8efb1d3005ff4",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-20T15:16:45.154Z",
+   "scenario": "agreed",
+   "msg": "terms hash on chain adfefac0b24192a6..., attestation 103c7a94510cf1a1...",
+   "termsHash": "adfefac0b24192a641ee886cd6fc43c4300d450164ea6cf8415d45ff6fd06cf0"
+  },
+  {
+   "t": "2026-10-20T15:16:51.592Z",
+   "scenario": "cancel",
+   "msg": "escrow.create_engagement 0x0c3bb14822 exec=FINISHED_WITH_RETURN",
+   "fn": "create_engagement",
+   "contract": "escrow",
+   "hash": "0x0c3bb14822ece57d2cc01112a4ee6ab7baa97a3a7fb6d62b41c0d11d8bd39914",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-20T15:16:52.930Z",
+   "scenario": "cancel",
+   "msg": "terms hash on chain d768ae8ce76fb1d6..., attestation a51345936884f054...",
+   "termsHash": "d768ae8ce76fb1d61e64c86835814be4400912a1cffb6101e2c139e27f54639e"
+  },
+  {
+   "t": "2026-10-20T15:16:58.091Z",
+   "scenario": "agreed",
+   "msg": "escrow.accept 0x7f6dfa6218 exec=FINISHED_WITH_RETURN",
+   "fn": "accept",
+   "contract": "escrow",
+   "hash": "0x7f6dfa6218f141d0787bdfa62f7acf170b7f7d0c5f9cfd8f77dcd8f67572d137",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-20T15:17:06.037Z",
+   "scenario": "cancel",
+   "msg": "reclaim_timeout 0xb3ad364d2f exec=FINISHED_WITH_ERROR: refused, as it must be",
+   "fn": "reclaim_timeout",
+   "hash": "0xb3ad364d2fdd098294e6a1c14d50424b1dacafb8629acb09f9e685b94385e584",
+   "exec": "FINISHED_WITH_ERROR",
+   "refused": true,
+   "strandedWei": "0"
+  },
+  {
+   "t": "2026-10-20T15:17:07.259Z",
+   "scenario": "agreed",
+   "msg": "submit send failed (An unknown RPC error occurred.\n\nDetails: Rate limit exceeded: 30 reque), retry 1"
+  },
+  {
+   "t": "2026-10-20T15:17:07.533Z",
+   "scenario": "cancel",
+   "msg": "reclaim_timeout refused before it was sent: An unknown RPC error occurred.\n\nDetails: Rate limit exceeded: 30 requests per minute\nVersion: viem@2.38.6",
+   "fn": "reclaim_timeout",
+   "refused": "before send"
+  },
+  {
+   "t": "2026-10-20T15:17:08.783Z",
+   "scenario": "cancel",
+   "msg": "reclaim_timeout send failed (An unknown RPC error occurred.\n\nDetails: Rate limit exceeded: 30 reque), retry 1"
+  },
+  {
+   "t": "2026-10-20T15:17:25.273Z",
+   "scenario": "cancel",
+   "msg": "reclaim_timeout send failed (An unknown RPC error occurred.\n\nDetails: Rate limit exceeded: 30 reque), retry 2"
+  },
+  {
+   "t": "2026-10-20T15:17:29.897Z",
+   "scenario": "agreed",
+   "msg": "escrow.submit 0xcefd17db4c exec=FINISHED_WITH_RETURN",
+   "fn": "submit",
+   "contract": "escrow",
+   "hash": "0xcefd17db4cf3d9c34f3333c844b474c84c85c5df2db0ebbd8da9a5d4052287ac",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-20T15:27:34.417Z",
+   "scenario": "agreed",
+   "msg": "verify 0x8f47ed0144 exec=FINISHED_WITH_ERROR: refused, as it must be",
+   "fn": "verify",
+   "hash": "0x8f47ed01441dffa772ec2c84158f28c9ceefa78bba1d3bcc8bfbbd0901cd82c6",
+   "exec": "FINISHED_WITH_ERROR",
+   "refused": true,
+   "strandedWei": "0"
+  },
+  {
+   "t": "2026-10-20T15:27:39.430Z",
+   "scenario": "cancel",
+   "msg": "escrow.reclaim_timeout 0x3b9ea05573 exec=FINISHED_WITH_RETURN",
+   "fn": "reclaim_timeout",
+   "contract": "escrow",
+   "hash": "0x3b9ea05573ba973454aa809a14c0fbfb7613187f77f99667410ea4484b895b38",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-20T15:27:41.557Z",
+   "scenario": "stale",
+   "msg": "verifier.attest 0x1742bfda82 exec=FINISHED_WITH_RETURN",
+   "fn": "attest",
+   "contract": "verifier",
+   "hash": "0x1742bfda8221ed328b57181bea35183732c964b56ae9f4197f73b6ffbf7ee57b",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-20T15:27:46.388Z",
+   "scenario": "agreed",
+   "msg": "reclaim_stale 0x2b02f6231c exec=FINISHED_WITH_ERROR: refused, as it must be",
+   "fn": "reclaim_stale",
+   "hash": "0x2b02f6231ceb5eccf01efddd8b25635ee366b68eb09a8d30f655c64d296f011f",
+   "exec": "FINISHED_WITH_ERROR",
+   "refused": true,
+   "strandedWei": "0"
+  },
+  {
+   "t": "2026-10-20T15:27:46.389Z",
+   "scenario": "agreed",
+   "msg": "stuck submission, recoverable at 2026-10-20T17:32:00.000Z, waiting 125 min"
+  },
+  {
+   "t": "2026-10-20T15:27:48.468Z",
+   "scenario": "drift",
+   "msg": "verifier.attest 0xbd564090cc exec=FINISHED_WITH_RETURN",
+   "fn": "attest",
+   "contract": "verifier",
+   "hash": "0xbd564090ccc18cc685af314fa43678bc7e7569fbf57f811a9cdd7679ec18feab",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-20T15:27:53.410Z",
+   "scenario": "cancel",
+   "msg": "reclaim_timeout 0xb8b3d85444 exec=FINISHED_WITH_ERROR: refused, as it must be",
+   "fn": "reclaim_timeout",
+   "hash": "0xb8b3d85444b2a16beec637609ef8da4002cafcb318fa56ac4729eaf64b34c270",
+   "exec": "FINISHED_WITH_ERROR",
+   "refused": true,
+   "strandedWei": "0"
+  },
+  {
+   "t": "2026-10-20T15:27:55.543Z",
+   "scenario": "driftstl",
+   "msg": "verifier.attest 0x52a05befeb exec=FINISHED_WITH_RETURN",
+   "fn": "attest",
+   "contract": "verifier",
+   "hash": "0x52a05befeb7578bbf07a997a25bb08615f3f7ea36ab0c7b328671992a964b459",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-20T15:28:02.802Z",
+   "scenario": "stale",
+   "msg": "verifier.check 0x20af57ed4e exec=FINISHED_WITH_RETURN",
+   "fn": "check",
+   "contract": "verifier",
+   "hash": "0x20af57ed4ecad6dadfddde3122b53fe0443e48f35acdef8ebcf33d7fb44c7dcb",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-20T15:28:04.453Z",
+   "scenario": "stale",
+   "msg": "verifier says pack-stale.txt is verified, digest a927dc83b4013aa1...",
+   "attestation": "62853376c44b76a70f08f33c5dd577e068e6b63f58c6e4edadf90c973ffd512a",
+   "digest": "a927dc83b4013aa1733d276c34eb181ef04825061c82a0d5409a68f87005195e"
+  },
+  {
+   "t": "2026-10-20T15:28:10.158Z",
+   "scenario": "drift",
+   "msg": "verifier.check 0x6d58e2cad2 exec=FINISHED_WITH_RETURN",
+   "fn": "check",
+   "contract": "verifier",
+   "hash": "0x6d58e2cad2dd6b1b20d64301240f47652527f1d6f364b445832f7b64abcc2f3f",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-20T15:28:15.401Z",
+   "scenario": "cancel",
+   "msg": "reclaim_timeout FINALIZED 0.4 min after the wait began",
+   "label": "reclaim_timeout",
+   "finalizedAfterMinutes": 0.4
+  },
+  {
+   "t": "2026-10-20T15:28:22.942Z",
+   "scenario": "driftstl",
+   "msg": "verifier.check 0x6d0611e891 exec=FINISHED_WITH_RETURN",
+   "fn": "check",
+   "contract": "verifier",
+   "hash": "0x6d0611e891f83847108a89108c3b2c3827ce84a66cb13ffb058fcba79271e833",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-20T15:28:35.782Z",
+   "scenario": "stale",
+   "msg": "check of pack-stale.txt FINALIZED 0.5 min after the wait began",
+   "label": "check of pack-stale.txt",
+   "finalizedAfterMinutes": 0.5
+  },
+  {
+   "t": "2026-10-20T15:28:48.651Z",
+   "scenario": "stale",
+   "msg": "escrow.create_engagement 0x7ecd63ba1d exec=FINISHED_WITH_RETURN",
+   "fn": "create_engagement",
+   "contract": "escrow",
+   "hash": "0x7ecd63ba1d1fa81d7781e11be341933a22f4f5a08b9ab9da11f96be26267e08b",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-20T15:28:49.953Z",
+   "scenario": "stale",
+   "msg": "terms hash on chain 20ff7f45b01c7645..., attestation 62853376c44b76a7...",
+   "termsHash": "20ff7f45b01c7645bde31e1eab3b29adbf2f4e08a7c61e02967fcbe853035b39"
+  },
+  {
+   "t": "2026-10-20T15:28:59.012Z",
+   "scenario": "stale",
+   "msg": "escrow.accept 0x77501f3425 exec=FINISHED_WITH_RETURN",
+   "fn": "accept",
+   "contract": "escrow",
+   "hash": "0x77501f3425a00d27a4c5682ee9ca84d26a0e07f3f7afe087f45a8d9d7f71576b",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-20T15:29:08.667Z",
+   "scenario": "stale",
+   "msg": "escrow.submit 0xa37d1bf2b8 exec=FINISHED_WITH_RETURN",
+   "fn": "submit",
+   "contract": "escrow",
+   "hash": "0xa37d1bf2b8735218dac3f16591f9b5f63fe52740682240fc95a3d629ece6d0de",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-20T15:39:17.131Z",
+   "scenario": "stale",
+   "msg": "escrow.verify 0x1348679cfe exec=FINISHED_WITH_ERROR",
+   "fn": "verify",
+   "contract": "escrow",
+   "hash": "0x1348679cfe915ac93cd4f6920b60eecd08620bd53bc552199f0047c86bfe6af4",
+   "exec": "FINISHED_WITH_ERROR"
+  },
+  {
+   "t": "2026-10-20T15:39:21.600Z",
+   "scenario": "stale",
+   "msg": "attempt 1: the verifier's finalized state does not vouch for it yet (exec FINISHED_WITH_ERROR), waiting"
+  }
+ ]
+}

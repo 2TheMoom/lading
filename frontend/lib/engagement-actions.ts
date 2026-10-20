@@ -1,4 +1,5 @@
 import type { ChainLink, Engagement } from "./contracts/types.ts";
+import { NETWORK } from "./genlayer/network.ts";
 
 export type StaleKind = "submitted" | "verified";
 
@@ -155,6 +156,6 @@ export function releaseBlocker(e: Engagement, chain: ChainLink[], now: number): 
   const drift = driftedLinks(chain);
   if (drift.length > 0) return `${drift.length === 1 ? "A link is" : `${drift.length} links are`} no longer verified: the client can ask for the refund.`;
   const need = linksNeedingCheck(chain, end);
-  if (need.length > 0) return `${need.length === 1 ? "One link needs" : `${need.length} links need`} a new check after the window closed, and that check must finalize (about 30 minutes).`;
+  if (need.length > 0) return `${need.length === 1 ? "One link needs" : `${need.length} links need`} a new check after the window closed, and that check must finalize (${NETWORK.finality}).`;
   return null;
 }

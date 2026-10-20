@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useWallet } from "@/lib/genlayer/wallet";
 import { short } from "@/lib/limits";
 import { Brand } from "./Mark";
+import { NETWORK } from "@/lib/genlayer/network";
 
 /** The header every app screen shares: brand, the two app destinations, the network and the wallet. */
 export function AppBar({ active }: { active?: "deliveries" | "new" }) {
@@ -14,7 +15,7 @@ export function AppBar({ active }: { active?: "deliveries" | "new" }) {
       <nav className="l-navlinks" aria-label="App">
         <Link href="/app" className={active === "deliveries" ? "on" : undefined}>Deliveries</Link>
         <Link href="/app/new" className={active === "new" ? "on" : undefined}>New escrow</Link>
-        <span className="l-mono l-note">Bradbury 4221</span>
+        <span className="l-mono l-note">{NETWORK.key === "studionet" ? "Studionet" : "Bradbury"} {NETWORK.id}</span>
         {wallet.isConnected && wallet.address ? (
           <>
             <span className="l-chip" title={wallet.address}>{short(wallet.address, 6, 4)}</span>

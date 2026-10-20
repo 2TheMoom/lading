@@ -5,6 +5,7 @@ import type { Attestation, ChainLink, Engagement } from "./types";
 import { decodeAttestation, decodeChain, decodeEngagement } from "./decode";
 import { failedReceiptMessage, isContractRefusal } from "../receipt";
 import { expectedStatus, finalStatus, movesFunds, type EngagementAction, type StaleKind } from "../engagement-actions";
+import { txExecName, txStatusName } from "../tx";
 
 /** Where a write is in its life. The UI shows these; only "finalized" means it is really done. */
 export type WriteStage = "signing" | "submitted" | "accepted" | "confirmed" | "finalized" | "failed";
@@ -162,7 +163,7 @@ class Lading {
   /** Where a transaction stands, for writes that were recorded before a reload. */
   async txStatus(hash: string): Promise<{ status: string; exec: string; receipt: any }> {
     const r: any = await this.readClient.getTransaction({ hash });
-    return { status: String(r?.statusName ?? ""), exec: String(r?.txExecutionResultName ?? ""), receipt: r };
+    return { status: txStatusName(r), exec: txExecName(r), receipt: r };
   }
 
   // ---- the write path -------------------------------------------------------------------------

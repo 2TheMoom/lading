@@ -10,6 +10,7 @@ import { addPendingWrite, settlePendingWrite, takeRestoredWrites, releaseRestore
 import { failedReceiptMessage } from "../receipt";
 import type { Attestation, ChainLink, Engagement } from "../contracts/types";
 import type { StaleKind } from "../engagement-actions";
+import { NETWORK } from "../genlayer/network";
 
 export type { WriteProgress };
 
@@ -194,7 +195,7 @@ function useWriteAction<TArgs>(action: Runner<TArgs>, messages: Messages, errorT
       setIsPending(false);
       // Recorded, not done: the success message comes when the transaction finalizes.
       info(`${messages.recorded.title}: recorded, waiting for finality`, {
-        description: `${messages.recorded.description} It counts as done once it finalizes (about 30 minutes on Bradbury).`,
+        description: `${messages.recorded.description} It counts as done once it finalizes (${NETWORK.finality} on ${NETWORK.short}).`,
         duration: 8000,
       });
     },

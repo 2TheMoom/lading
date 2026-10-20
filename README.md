@@ -18,12 +18,14 @@ Lading is two contracts that run together, and **both are in this repository**. 
 | Pay | `contracts/lading.py`, `release`, `refund_drift`, `reclaim_*`, then `settle` | A decision and its payment are never in the same transaction. |
 | The app | `frontend/lib/contracts/Lading.ts` (lines 307 and 314) and `frontend/app/api/preflight/route.ts` | The app sends `attest` and `check` to the verifier and the escrow calls to the escrow. Its preflight route downloads and hashes the file before Fund is enabled, as a safeguard only: the validators decide. |
 
-**The code in this repo is the code that is deployed.** `node scripts/verify-deployed.mjs` downloads the deployed source of both contracts from Bradbury and compares it with the files here. At the time of writing both are identical, byte for byte (output in `scripts/verify-deployed.txt`):
+**The code in this repo is the code that is deployed.** `node scripts/verify-deployed.mjs` downloads the deployed source of both contracts from Bradbury (and with `NETWORK=studionet` from the hosted Studio network) and compares it with the files here. At the time of writing both are identical, byte for byte (output in `scripts/verify-deployed.txt` for Bradbury and `scripts/verify-deployed-studionet.txt` for Studionet):
 
 | Contract | Address | sha256 of the source (the same on chain and in this repo) |
 |---|---|---|
-| Escrow | [`0xd325abD9d0cAE02594Ec7dEe53091CCa2356983e`](https://explorer-bradbury.genlayer.com/address/0xd325abD9d0cAE02594Ec7dEe53091CCa2356983e) | `df2656eab46cac65...3657a5451` |
-| Verifier | [`0x6508856DE231e094BfD121Eb5A30D5C3c03972A9`](https://explorer-bradbury.genlayer.com/address/0x6508856DE231e094BfD121Eb5A30D5C3c03972A9) | `4d4f87374f8ff1ec...fa25b524` |
+| Escrow, Bradbury | [`0xd325abD9d0cAE02594Ec7dEe53091CCa2356983e`](https://explorer-bradbury.genlayer.com/address/0xd325abD9d0cAE02594Ec7dEe53091CCa2356983e) | `df2656eab46cac65...3657a5451` |
+| Verifier, Bradbury | [`0x6508856DE231e094BfD121Eb5A30D5C3c03972A9`](https://explorer-bradbury.genlayer.com/address/0x6508856DE231e094BfD121Eb5A30D5C3c03972A9) | `4d4f87374f8ff1ec...fa25b524` |
+| Escrow, Studionet | [`0x85223A7f0C589Bd14Eb2207C618de20c8bE4E157`](https://explorer-studio.genlayer.com/address/0x85223A7f0C589Bd14Eb2207C618de20c8bE4E157) | `df2656eab46cac65...3657a5451` |
+| Verifier, Studionet | [`0xB1c2504851805F3B2c9F4355bf7B78aeFd95738E`](https://explorer-studio.genlayer.com/address/0xB1c2504851805F3B2c9F4355bf7B78aeFd95738E) | `4d4f87374f8ff1ec...fa25b524` |
 
 The verifier started life as a standalone, reusable contract ([Lineage](https://github.com/2TheMoom/lineage), which anything can use for digest attestations with chains of custody). Lading reuses that exact deployment, and its source and its tests are now part of this repository too (59 tests of the verifier itself, and 31 more that run the validators' vote), so the complete path from a URL to a payout can be reviewed here without leaving it.
 
@@ -74,6 +76,17 @@ Deployed on **GenLayer Bradbury Testnet** (chain ID 4221):
 - **Escrow:** [`0xd325abD9d0cAE02594Ec7dEe53091CCa2356983e`](https://explorer-bradbury.genlayer.com/address/0xd325abD9d0cAE02594Ec7dEe53091CCa2356983e) (the audited contract; the first deployment, [`0xacc591981a7F4B059aE9E5C9a4Cd79aC7fe56A45`](https://explorer-bradbury.genlayer.com/address/0xacc591981a7F4B059aE9E5C9a4Cd79aC7fe56A45), is superseded and kept only for the round 1 evidence below)
 - **Verifier (Lineage v2):** [`0x6508856DE231e094BfD121Eb5A30D5C3c03972A9`](https://explorer-bradbury.genlayer.com/address/0x6508856DE231e094BfD121Eb5A30D5C3c03972A9)
 - **App and landing page:** https://lading-frontend.vercel.app (try [a settled delivery](https://lading-frontend.vercel.app/app/d/lad-mvb2wtva-happy))
+
+### Studionet: deployed, but the escrow cannot verify there
+
+Both contracts are also deployed on **Studionet**, the hosted Studio network (chain ID 61999), from the same source and with no change to either contract:
+
+- **Escrow:** [`0x85223A7f0C589Bd14Eb2207C618de20c8bE4E157`](https://explorer-studio.genlayer.com/address/0x85223A7f0C589Bd14Eb2207C618de20c8bE4E157)
+- **Verifier (Lineage v2 source):** [`0xB1c2504851805F3B2c9F4355bf7B78aeFd95738E`](https://explorer-studio.genlayer.com/address/0xB1c2504851805F3B2c9F4355bf7B78aeFd95738E)
+
+Funding, accepting, submitting, cancelling and reclaiming all work there, and Studio finalizes in under a minute. The escrow's `verify` does not: it reads the verifier at `LATEST_FINAL`, and on Studionet a contract-to-contract read at `LATEST_FINAL` never returns. [`docs/studionet-nested-final-read-probe.py`](docs/studionet-nested-final-read-probe.py) is a minimal contract that shows it (on Studionet a direct read at that state answers in 1.4 s, a nested read at the default state in 1.3 s, a nested read at `LATEST_FINAL` gave no answer in 120 s). The escrow will not pay on anything less than a finalized verdict, so it was not changed to fit Studio. **The live app, the evidence below and the payout path are Bradbury.**
+
+The scripts and the web app can target either network (`NETWORK=studionet` for the scripts, `NEXT_PUBLIC_GENLAYER_CHAIN_ID=61999` for the app). The tests of the app's receipt and network handling are in `frontend/lib/tx.test.ts`. The Studionet run logs are `scripts/e2e-log-studionet*.json`.
 
 ## Security model
 

@@ -27,3 +27,4 @@ artifacts/
 /probe/
 /.harness/
 scripts/*.out
+.harness/

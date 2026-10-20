@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Brand } from "@/components/Mark";
+import { NETWORK } from "@/lib/genlayer/network";
 
 const REPO = "https://github.com/2TheMoom/lading";
 
@@ -38,7 +39,7 @@ export default function Landing() {
 
         <div style={{ flex: "1 1 520px", minWidth: 0, maxWidth: 640 }}>
           <div className="l-panel" style={{ boxShadow: "10px 10px 0 var(--line)" }}>
-            <div className="l-panel-head"><span>Bill of lading</span><span style={{ color: "var(--ink2)" }}>Real run, Bradbury testnet</span></div>
+            <div className="l-panel-head"><span>Bill of lading</span><span style={{ color: "var(--ink2)" }}>Real run, {NETWORK.short}</span></div>
             <div style={{ padding: 22 }}>
               <div className="l-kv" style={{ gridTemplateColumns: "100px minmax(0, 1fr)" }}>
                 <div className="k">Artifact</div><div className="l-mono">jq-linux-amd64 <span style={{ color: "var(--ink2)" }}>2,319,424 bytes</span></div>
@@ -116,8 +117,8 @@ export default function Landing() {
               ["Read part of a file", "A file that cannot be read in full is refused, never cut short and hashed."],
             ],
             [
-              ["Call a write done too early", "The app says \"recorded, not final\" until the transaction finalizes, about 30 minutes on Bradbury, then confirms the result and the state."],
-              ["Take a bad request's money", "On Bradbury a refused call keeps its value, so the form checks every rule before it asks your wallet to send anything."],
+              ["Call a write done too early", `The app says "recorded, not final" until the transaction finalizes, ${NETWORK.finality} on ${NETWORK.short}, then confirms the result and the state.`],
+              ["Take a bad request's money", `On ${NETWORK.short} a refused call keeps its value, so the form checks every rule before it asks your wallet to send anything.`],
               ["Hide who vouched", "Every link shows the list it was checked against, so a self-made chain cannot pass for the real one."],
             ],
           ].map((col, ci) => (
@@ -148,7 +149,7 @@ export default function Landing() {
       <section className="l-wrap" style={{ paddingBlock: "72px", display: "flex", flexWrap: "wrap", gap: 32, alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ flex: "1 1 480px", minWidth: 0 }}>
           <div className="l-display" style={{ fontSize: 56, lineHeight: 1, textWrap: "balance" }}>Put a real release behind the money.</div>
-          <p style={{ margin: "14px 0 0", color: "var(--ink2)", maxWidth: 560 }}>Runs on the GenLayer Bradbury testnet with test GEN. Contracts, tests and a live run against the jq 1.7.1 release are public.</p>
+          <p style={{ margin: "14px 0 0", color: "var(--ink2)", maxWidth: 560 }}>Runs on GenLayer {NETWORK.short} with test GEN. Contracts, tests and a live run against the jq 1.7.1 release are public.</p>
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
           <Link href="/app/new" className="l-btn">Fund an escrow</Link>
@@ -158,7 +159,7 @@ export default function Landing() {
 
       <footer style={{ padding: "24px 48px", borderTop: "1px solid var(--line)", display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "space-between", fontSize: 13, color: "var(--ink2)" }} className="l-mono">
         <span>Lading, a bill of lading for software</span>
-        <span>GenLayer Bradbury testnet, chain 4221</span>
+        <span>GenLayer {NETWORK.short}, chain {NETWORK.id}</span>
       </footer>
     </div>
   );
